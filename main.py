@@ -11,6 +11,11 @@ from io import BytesIO
 import time
 import logging
 from urllib.parse import urlparse
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Setup Logging
 logging.basicConfig(
@@ -108,7 +113,15 @@ class SaveConfigRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "v": int(time.time())})
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "v": int(time.time()),
+        "carestack_api_url": os.getenv("CARESTACK_API_URL", ""),
+        "carestack_auth_url": os.getenv("CARESTACK_AUTH_URL", ""),
+        "carestack_username": os.getenv("CARESTACK_USERNAME", ""),
+        "carestack_client_id": os.getenv("CARESTACK_CLIENT_ID", ""),
+        "carestack_client_secret": os.getenv("CARESTACK_CLIENT_SECRET", "")
+    })
 
 @app.get("/api/locations")
 async def get_locations():

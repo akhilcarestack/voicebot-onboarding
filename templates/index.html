@@ -33,7 +33,7 @@
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <label for="apiBaseUrl" class="form-label">API URL</label>
-                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiBaseUrl" placeholder="https://api.carestack.com" value="https://api.carestack.com">
+                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiBaseUrl" placeholder="https://api.carestack.com" value="{{ carestack_api_url }}">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="apiPassword" class="form-label">Password</label>
@@ -53,19 +53,19 @@
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <label for="apiAuthUrl" class="form-label">Auth URL</label>
-                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiAuthUrl" placeholder="https://id.carestack.com" value="https://id.carestack.com">
+                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiAuthUrl" placeholder="https://id.carestack.com" value="{{ carestack_auth_url }}">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="apiUsername" class="form-label">Username</label>
-                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiUsername" value="F19956BC-B8E8-4B26-B2BD-41F449E7000B">
+                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiUsername" value="{{ carestack_username }}">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="apiClientId" class="form-label">Client ID</label>
-                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiClientId" value="cs_conversation_api_client_prod">
+                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiClientId" value="{{ carestack_client_id }}">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="apiClientSecret" class="form-label">Client Secret</label>
-                                        <input type="password" class="form-control bg-dark text-white border-secondary" id="apiClientSecret" value="10aacd7d-773e-4617-bc6f-04fb43e58d0d">
+                                        <input type="password" class="form-control bg-dark text-white border-secondary" id="apiClientSecret" value="{{ carestack_client_secret }}">
                                     </div>
                                 </div>
                             </div>
