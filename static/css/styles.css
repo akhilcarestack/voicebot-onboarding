@@ -1,0 +1,68 @@
+body {
+    background-color: #000000;
+    color: #ffffff;
+}
+
+.bg-dark-custom {
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+    color: #fff;
+}
+
+.card-header {
+    border-bottom: 1px solid #333;
+}
+
+.btn-success {
+    background-color: #28a745;
+    border-color: #28a745;
+    color: #fff;
+}
+
+.btn-outline-success {
+    color: #28a745;
+    border-color: #28a745;
+}
+
+.btn-outline-success:hover {
+    background-color: #28a745;
+    color: #fff;
+}
+
+.form-check-input:checked {
+    background-color: #28a745;
+    border-color: #28a745;
+}
+
+/* Scrollbar styling for dark mode feel */
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #000; 
+}
+::-webkit-scrollbar-thumb {
+    background: #444; 
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #555; 
+}
+
+/* Dark Tabs */
+.nav-tabs {
+    border-bottom: 1px solid #333;
+}
+.nav-tabs .nav-link {
+    color: #aaa;
+    border: 1px solid transparent;
+}
+.nav-tabs .nav-link:hover {
+    border-color: #333 #333 #1a1a1a;
+    color: #fff;
+}
+.nav-tabs .nav-link.active {
+    color: #28a745 !important; /* Keep the green accent */
+    background-color: #1a1a1a;
+    border-color: #333 #333 #1a1a1a;
+}
