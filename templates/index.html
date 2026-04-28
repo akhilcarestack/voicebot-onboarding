@@ -3,247 +3,289 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoiceBot Onboarding - PMS Validator</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/static/css/styles.css" rel="stylesheet">
+    <title>VoiceBot PMS Data Validator</title>
+    <meta name="description" content="Validate voicebot PMS configuration data — providers, production types, operatories, and specialty matching.">
+    <link rel="stylesheet" href="/static/css/styles.css?v={{ v }}">
 </head>
 <body>
-    <div class="container mt-4">
-        <h1 class="mb-4 text-center">VoiceBot Onboarding Validator</h1>
-        
-        <form id="validatorForm">
-            <!-- 0. API Configuration -->
-            <div class="card mb-4 bg-dark-custom">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>API Configuration</span>
-                    <button class="btn btn-sm btn-outline-success" type="button" data-bs-toggle="collapse" data-bs-target="#apiConfigCollapse">Hide</button>
-                </div>
-                <div class="collapse show" id="apiConfigCollapse">
-                    <div class="card-body">
-                        <ul class="nav nav-tabs mb-3" id="apiConfigTabs" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active text-success" id="general-tab" data-bs-toggle="tab" data-bs-target="#general" type="button" role="tab" aria-controls="general" aria-selected="true">General</button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link text-secondary" id="settings-tab" data-bs-toggle="tab" data-bs-target="#settings" type="button" role="tab" aria-controls="settings" aria-selected="false">Settings</button>
-                            </li>
-                        </ul>
-                        <div class="tab-content" id="apiConfigTabContent">
-                            <div class="tab-pane fade show active" id="general" role="tabpanel" aria-labelledby="general-tab">
-                                <div class="row g-3">
-                                    <div class="col-md-6">
-                                        <label for="apiBaseUrl" class="form-label">API URL</label>
-                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiBaseUrl" placeholder="https://api.carestack.com" value="{{ carestack_api_url }}">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="apiPassword" class="form-label">Password</label>
-                                        <input type="password" class="form-control bg-dark text-white border-secondary" id="apiPassword">
-                                    </div>
-                                </div>
-                                <div class="mt-3">
-                                    <button type="button" class="btn btn-success" id="btnFetchApi">Fetch Locations</button>
-                                    <button type="button" class="btn btn-primary ms-2" id="btnFetchDetails" disabled>Fetch Production Type per Location</button>
-                                    <button type="button" class="btn btn-info ms-2" id="btnFetchUsers">Get Providers</button>
-                                    <button type="button" class="btn btn-warning ms-2" id="btnFetchSchedulerPT">Get Production Types</button>
-                                    <button type="button" class="btn btn-secondary ms-2" id="btnMatchSpecialty">Match by Specialty</button>
-                                    <span id="fetchStatus" class="ms-2 text-muted"></span>
-                                </div>
-                            </div>
-                            <div class="tab-pane fade" id="settings" role="tabpanel" aria-labelledby="settings-tab">
-                                <div class="row g-3">
-                                    <div class="col-md-6">
-                                        <label for="apiAuthUrl" class="form-label">Auth URL</label>
-                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiAuthUrl" placeholder="https://id.carestack.com" value="{{ carestack_auth_url }}">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="apiUsername" class="form-label">Username</label>
-                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiUsername" value="{{ carestack_username }}">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="apiClientId" class="form-label">Client ID</label>
-                                        <input type="text" class="form-control bg-dark text-white border-secondary" id="apiClientId" value="{{ carestack_client_id }}">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="apiClientSecret" class="form-label">Client Secret</label>
-                                        <input type="password" class="form-control bg-dark text-white border-secondary" id="apiClientSecret" value="{{ carestack_client_secret }}">
-                                    </div>
-                                </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <!-- Animated Robot with Phone -->
+            <div class="robot-scene">
+                <div class="robot">
+                    <!-- Antenna -->
+                    <div class="robot-antenna">
+                        <div class="antenna-ball"></div>
+                        <div class="antenna-stem"></div>
+                    </div>
+                    <!-- Head -->
+                    <div class="robot-head">
+                        <div class="robot-eye left"></div>
+                        <div class="robot-eye right"></div>
+                        <div class="robot-mouth"></div>
+                    </div>
+                    <!-- Body -->
+                    <div class="robot-body">
+                        <div class="robot-arm left-arm">
+                            <div class="robot-phone">
+                                <div class="phone-screen"></div>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Users List (Hidden by default) -->
-            <div class="card mb-4 bg-dark-custom d-none" id="usersCard">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>Fetched Providers</span>
-                    <button class="btn btn-sm btn-outline-success" type="button" data-bs-toggle="collapse" data-bs-target="#usersCollapse">Hide</button>
-                </div>
-                <div class="collapse show" id="usersCollapse">
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-dark table-striped" id="usersTable">
-                                <thead>
-                                    <tr>
-                                        <th>User Detail ID</th>
-                                        <th>Name</th>
-                                        <th>Username</th>
-                                        <th>Provider ID</th>
-                                        <th>Provider Type</th>
-                                        <th>Specialty ID</th>
-                                        <th>Role</th>
-                                        <th>Location</th>
-                                        <th>Max Concurrent Appointments</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="usersTableBody">
-                                    <!-- Users injected here -->
-                                </tbody>
-                            </table>
+                        <div class="robot-chest">
+                            <div class="chest-light"></div>
                         </div>
+                        <div class="robot-arm right-arm"></div>
+                    </div>
+                    <!-- Legs -->
+                    <div class="robot-legs">
+                        <div class="robot-leg left-leg"></div>
+                        <div class="robot-leg right-leg"></div>
                     </div>
                 </div>
+                <!-- Ground shadow -->
+                <div class="robot-shadow"></div>
             </div>
-
-            <!-- Scheduler Production Types (Hidden by default) -->
-            <div class="card mb-4 bg-dark-custom d-none" id="schedulerPTCard">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>Fetched Production Types (Scheduler)</span>
-                    <button class="btn btn-sm btn-outline-success" type="button" data-bs-toggle="collapse" data-bs-target="#schedulerPTCollapse">Hide</button>
-                </div>
-                <div class="collapse show" id="schedulerPTCollapse">
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-dark table-striped" id="schedulerPTTable">
-                                <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Name</th>
-                                        <th>Provider Speciality</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="schedulerPTTableBody">
-                                    <!-- Results injected here -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+            <!-- Progress Bar -->
+            <div class="loading-progress-track">
+                <div class="loading-progress-bar" id="loadingProgressBar"></div>
             </div>
-
-            <!-- Matched Specialists (Hidden by default) -->
-            <div class="card mb-4 bg-dark-custom d-none" id="matchedSpecialistsCard">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>Matched Providers & Production Types</span>
-                    <button class="btn btn-sm btn-outline-success" type="button" data-bs-toggle="collapse" data-bs-target="#matchedSpecialistsCollapse">Hide</button>
-                </div>
-                <div class="collapse show" id="matchedSpecialistsCollapse">
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-dark table-striped" id="matchedSpecialistsTable">
-                                <thead>
-                                    <tr>
-                                        <th>Provider Name</th>
-                                        <th>Provider Specialty ID</th>
-                                        <th>Production Type Name</th>
-                                        <th>Production Type ID</th>
-                                        <th>PT Specialty IDs</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="matchedSpecialistsTableBody">
-                                    <!-- Results injected here -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 1. Locations -->
-            <div class="card mb-4 bg-dark-custom">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>1. Locations</span>
-                    <button class="btn btn-sm btn-outline-success" type="button" data-bs-toggle="collapse" data-bs-target="#locationsCollapse">Hide</button>
-                </div>
-                <div class="collapse show" id="locationsCollapse">
-                    <div class="card-body" id="locationsContainer">
-                        <!-- Locations injected here -->
-                    </div>
-                </div>
-            </div>
-
-            <!-- 2. Providers -->
-            <div class="card mb-4 bg-dark-custom">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>2. Providers</span>
-                    <button class="btn btn-sm btn-outline-success" type="button" data-bs-toggle="collapse" data-bs-target="#providersCollapse">Hide</button>
-                </div>
-                <div class="collapse show" id="providersCollapse">
-                    <div class="card-body">
-                        <input type="text" class="form-control mb-3 bg-dark text-white border-secondary" id="providerSearch" placeholder="Search Providers...">
-                        <div id="providersContainer">
-                            <!-- Providers injected here -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3. Production Types per Provider -->
-            <div class="card mb-4 bg-dark-custom">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span>3. Production Types</span>
-                    <button class="btn btn-sm btn-outline-success" type="button" data-bs-toggle="collapse" data-bs-target="#productionCollapse">Hide</button>
-                </div>
-                <div class="collapse show" id="productionCollapse">
-                    <div class="card-body" id="productionTypesContainer">
-                        <p class="text-muted">Select providers above to see production types.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 6. Bot Functionalities -->
-            <div class="card mb-4 bg-dark-custom">
-                <div class="card-body">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="botFunctionality">
-                        <label class="form-check-label" for="botFunctionality">
-                            Enable Bot Functionalities for this Practice
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 7 & 8. Text Inputs -->
-            <div class="row mb-4">
-                <div class="col-md-6">
-                    <label for="excludedInsurance" class="form-label">Excluded Insurance Providers</label>
-                    <textarea class="form-control bg-dark text-white border-secondary" id="excludedInsurance" rows="3"></textarea>
-                </div>
-                <div class="col-md-6">
-                    <label for="additionalNotes" class="form-label">Additional Notes</label>
-                    <textarea class="form-control bg-dark text-white border-secondary" id="additionalNotes" rows="3"></textarea>
-                </div>
-            </div>
-
-            <!-- 4. Actions -->
-            <div class="d-flex gap-2 mb-5">
-                <button type="button" class="btn btn-success" id="btnValidate">Validate Configuration</button>
-                <button type="button" class="btn btn-outline-success" id="btnSave">Save Configuration</button>
-                <button type="button" class="btn btn-outline-success" id="btnReset">Reset</button>
-            </div>
-        </form>
-
-        <!-- Validation Results Modal or Section -->
-        <div id="validationResults" class="alert d-none">
-            <h4>Validation Results</h4>
-            <div id="validationContent"></div>
+            <div class="loading-text" id="loadingText">Loading...</div>
+            <div class="loading-sub" id="loadingSub">This may take a minute</div>
         </div>
+    </div>
+
+    <div class="app-container">
+
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1>VoiceBot PMS Validator</h1>
+                    <p class="subtitle">Validate provider, production type, and operatory configurations</p>
+                </div>
+                <button class="btn-logout hidden" id="btnLogout" title="Clear session & start over">
+                    🚪 Logout
+                </button>
+            </div>
+        </header>
+
+        <!-- Stepper -->
+        <nav class="stepper" id="stepper">
+            <div class="stepper-step active" data-step="1" id="stepperStep1">
+                <div class="step-number">1</div>
+                <div class="step-label">Connect & Locations</div>
+            </div>
+            <div class="stepper-line" id="stepperLine1"></div>
+            <div class="stepper-step disabled" data-step="2" id="stepperStep2">
+                <div class="step-number">2</div>
+                <div class="step-label">Specialty Matrix</div>
+            </div>
+            <div class="stepper-line" id="stepperLine2"></div>
+            <div class="stepper-step disabled" data-step="3" id="stepperStep3">
+                <div class="step-number">3</div>
+                <div class="step-label">Operatories</div>
+            </div>
+            <div class="stepper-line" id="stepperLine3"></div>
+            <div class="stepper-step disabled" data-step="4" id="stepperStep4">
+                <div class="step-number">4</div>
+                <div class="step-label">Validation & Export</div>
+            </div>
+        </nav>
+
+        <!-- ==========================================
+             STEP 1: Connect & Select Locations
+             ========================================== -->
+        <section class="step-panel active" id="stepPanel1">
+
+            <!-- API Config -->
+            <div class="glass-card">
+                <div class="card-title">
+                    <span class="icon">🔗</span>
+                    API Configuration
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label class="form-label" for="apiBaseUrl">Carestack API URL</label>
+                        <input type="text" class="form-input" id="apiBaseUrl"
+                               placeholder="https://tenant.carestack.com"
+                               value="{{ carestack_api_url }}">
+                    </div>
+                    <div>
+                        <label class="form-label" for="apiPassword">Password</label>
+                        <input type="password" class="form-input" id="apiPassword"
+                               placeholder="Enter password">
+                    </div>
+                </div>
+                <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">
+                    Auth URL, Username, Client ID, and Client Secret are loaded from server environment.
+                </p>
+                <button class="btn btn-primary" id="btnConnect">
+                    ⚡ Connect & Fetch Locations
+                </button>
+                <div class="status-bar hidden" id="connectStatus"></div>
+            </div>
+
+            <!-- Locations -->
+            <div class="glass-card" id="locationsCard" style="display:none;">
+                <div class="card-title">
+                    <span class="icon">📍</span>
+                    Select Locations
+                    <span class="badge badge-teal" id="locationCount"></span>
+                </div>
+                <div class="location-grid" id="locationsGrid">
+                    <!-- locations injected here -->
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-accent" id="btnLoadData" disabled>
+                        🚀 Load All Data for Selected Locations
+                    </button>
+                </div>
+                <div class="status-bar hidden" id="loadStatus"></div>
+            </div>
+
+        </section>
+
+        <!-- ==========================================
+             STEP 2: Provider × Production Type Matrix
+             ========================================== -->
+        <section class="step-panel" id="stepPanel2">
+
+            <div class="glass-card">
+                <div class="card-title">
+                    <span class="icon">🧬</span>
+                    Provider × Production Type — Specialty Match
+                    <span class="badge badge-violet" id="matrixBadge"></span>
+                </div>
+
+                <!-- Stats -->
+                <div class="matrix-stats" id="matrixStats"></div>
+
+                <!-- Matrix -->
+                <div class="matrix-wrapper" id="matrixWrapper">
+                    <div class="empty-state">
+                        <div class="empty-icon">📊</div>
+                        <div class="empty-text">Matrix will appear after data is loaded</div>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div class="matrix-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot match"></div>
+                        <span>Specialty Match</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot mismatch"></div>
+                        <span>Specialty Mismatch</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step-nav">
+                <button class="btn btn-secondary" onclick="goToStep(1)">← Back</button>
+                <button class="btn btn-primary" onclick="goToStep(3)">Next: Operatories →</button>
+            </div>
+        </section>
+
+        <!-- ==========================================
+             STEP 3: Operatories
+             ========================================== -->
+        <section class="step-panel" id="stepPanel3">
+
+            <div class="glass-card">
+                <div class="card-title">
+                    <span class="icon">🏥</span>
+                    Operatories by Location
+                    <span class="badge badge-amber" id="operatoryBadge"></span>
+                </div>
+
+                <div id="operatoriesContainer">
+                    <div class="empty-state">
+                        <div class="empty-icon">🏥</div>
+                        <div class="empty-text">Operatories will appear after data is loaded</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step-nav">
+                <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
+                <button class="btn btn-primary" onclick="goToStep(4)">Next: Validation →</button>
+            </div>
+        </section>
+
+        <!-- ==========================================
+             STEP 4: Duration Validation & Summary
+             ========================================== -->
+        <section class="step-panel" id="stepPanel4">
+
+            <!-- Duration Table -->
+            <div class="glass-card">
+                <div class="card-title">
+                    <span class="icon">⏱️</span>
+                    Production Type Duration
+                    <span class="badge badge-teal" id="durationBadge"></span>
+                </div>
+
+                <div id="durationContainer">
+                    <div class="empty-state">
+                        <div class="empty-icon">⏱️</div>
+                        <div class="empty-text">Duration data will appear after data is loaded</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Validation Summary -->
+            <div class="glass-card">
+                <div class="card-title">
+                    <span class="icon">✅</span>
+                    Validation Summary
+                </div>
+
+                <div id="validationSummary">
+                    <div class="empty-state">
+                        <div class="empty-icon">📋</div>
+                        <div class="empty-text">Validation results will appear here</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export -->
+            <div class="glass-card">
+                <div class="card-title">
+                    <span class="icon">💾</span>
+                    Export Configuration
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label class="form-label" for="excludedInsurance">Excluded Insurance Providers</label>
+                        <textarea class="form-input" id="excludedInsurance" rows="2"
+                                  placeholder="Enter excluded insurance providers..."></textarea>
+                    </div>
+                    <div>
+                        <label class="form-label" for="additionalNotes">Additional Notes</label>
+                        <textarea class="form-input" id="additionalNotes" rows="2"
+                                  placeholder="Any additional notes..."></textarea>
+                    </div>
+                </div>
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-secondary); margin-bottom:12px; cursor:pointer;">
+                    <input type="checkbox" id="botFunctionality" style="accent-color:var(--accent-teal);">
+                    Enable Bot Functionalities for this Practice
+                </label>
+                <button class="btn btn-primary" id="btnExport">
+                    📥 Export to Excel
+                </button>
+            </div>
+
+            <div class="step-nav">
+                <button class="btn btn-secondary" onclick="goToStep(3)">← Back</button>
+                <span style="color:var(--text-muted); font-size:12px;">End of validation flow</span>
+            </div>
+        </section>
 
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/static/js/app.js?v={{ v }}"></script>
 </body>
 </html>
-
