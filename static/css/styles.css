@@ -479,6 +479,54 @@ body {
 /* ============================================
    SPECIALTY MATRIX
    ============================================ */
+
+/* Provider filter */
+.matrix-filter {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 18px;
+    padding: 14px 18px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    flex-wrap: wrap;
+}
+
+.filter-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.filter-icon {
+    font-size: 16px;
+}
+
+.filter-select {
+    max-width: 320px;
+    min-width: 220px;
+    flex-shrink: 0;
+}
+
+.filter-hint {
+    font-size: 12px;
+    color: var(--accent-violet);
+    font-weight: 500;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.filter-hint:empty {
+    display: none;
+}
 .matrix-wrapper {
     overflow-x: auto;
     border-radius: var(--radius-md);
@@ -551,16 +599,13 @@ body {
     margin-top: 1px;
 }
 
-/* Column headers (PT names) - rotated */
+/* Column headers (PT names) */
 .matrix-table .col-header {
-    writing-mode: vertical-lr;
-    text-orientation: mixed;
-    transform: rotate(180deg);
-    height: 120px;
-    vertical-align: bottom;
+    vertical-align: middle;
     font-size: 11px;
-    padding: 8px 4px;
-    min-width: 36px;
+    padding: 8px 12px;
+    white-space: normal;
+    min-width: 100px;
 }
 
 /* Match/mismatch cells */
@@ -701,6 +746,55 @@ body {
     font-size: 11px;
     color: var(--text-muted);
     margin-top: 2px;
+}
+
+/* Operatory provider tags */
+.op-providers {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.op-providers strong {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+}
+
+.op-providers.op-providers-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.op-provider-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.op-provider-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px dashed var(--border-medium);
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text-muted);
+    transition: var(--transition-fast);
+}
+
+.op-provider-tag.selected {
+    border: 1px solid var(--accent-teal);
+    background: var(--accent-teal-dim);
+    color: var(--accent-teal);
+    font-weight: 600;
+    box-shadow: 0 0 8px rgba(0, 212, 170, 0.12);
 }
 
 /* ============================================

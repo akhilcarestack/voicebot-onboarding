@@ -236,6 +236,14 @@ def fetch_all_data(creds: FetchAllDataRequest):
             resp.raise_for_status()
             return resp.json()
 
+        def _fetch_operatory_providers():
+            resp = requests.get(
+                f"{scheduler_base}/provider-availability/operatory-provider",
+                headers=headers, timeout=30
+            )
+            resp.raise_for_status()
+            return resp.json()
+
         def _fetch_users():
             url = f"{api_base_url}/setup/user/grid-get-users-all"
             payload = {
@@ -282,47 +290,71 @@ def fetch_all_data(creds: FetchAllDataRequest):
             return filtered
 
         # Execute fetches in parallel (users is slow due to N+1, but included)
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=6) as executor:
             future_providers = executor.submit(_fetch_providers)
             future_pts = executor.submit(_fetch_production_types)
             future_ops = executor.submit(_fetch_operatories)
             future_sched = executor.submit(_fetch_scheduler_pts)
             future_users = executor.submit(_fetch_users)
+            future_op_prov = executor.submit(_fetch_operatory_providers)
 
             raw_providers = future_providers.result()
             raw_pts = future_pts.result()
             raw_ops = future_ops.result()
             raw_sched_pts = future_sched.result()
             raw_users = future_users.result()
+            raw_op_prov = future_op_prov.result()
 
+
+        # --- Build user concurrency map ---
+        user_concurrency_map = {}
+        for u in raw_users:
+            pid = u.get("ProviderID")
+            if pid is not None and str(pid).lower() != "null":
+                user_concurrency_map[str(pid)] = u.get("MaxConcurrentAppointments", "N/A")
 
         # --- Transform Providers ---
         providers = []
         for p in raw_providers:
-            if not p.get("isActive"):
-                continue
+            p_id = p.get("id")
             providers.append({
-                "id": p.get("id"),
+                "id": p_id,
                 "name": f"{p.get('firstName', '')} {p.get('lastName', '')}".strip(),
                 "providerType": p.get("providerType", "Unknown"),
                 "specialityId": p.get("specialityId"),
                 "color": p.get("color", ""),
                 "isActive": p.get("isActive", False),
+                "concurrency": user_concurrency_map.get(str(p_id), "N/A"),
             })
 
         # --- Build scheduler PT lookup ---
         sched_pt_map = {}
+        _logged_sample = False
         for spt in raw_sched_pts:
             allocs = spt.get("providerAllocation", [])
+
+            # Log a sample providerAllocation entry for debugging
+            if not _logged_sample and allocs:
+                logger.info(f"[DEBUG] Sample providerAllocation entry: {allocs[0]}")
+                _logged_sample = True
+
             specialities = sorted(set(
                 a.get("providerSpeciality") for a in allocs
                 if a.get("providerSpeciality") is not None
             ))
+
+            # Extract provider IDs from allocation entries
+            allocated_provider_ids = sorted(set(
+                a.get("providerId") for a in allocs
+                if a.get("providerId") is not None
+            ))
+
             slot_length = spt.get("slotLength", 0)
             sched_pt_map[spt.get("id")] = {
                 "slotLength": slot_length,
                 "durationMinutes": slot_length * SLOT_DURATION_MINUTES,
                 "providerSpecialities": specialities,
+                "allocatedProviderIds": allocated_provider_ids,
                 "isActive": spt.get("isActive", False),
                 "locationScope": spt.get("location", {}),
             }
@@ -341,6 +373,7 @@ def fetch_all_data(creds: FetchAllDataRequest):
                 "slotLength": sched_data.get("slotLength", 0),
                 "durationMinutes": sched_data.get("durationMinutes", 0),
                 "providerSpecialities": sched_data.get("providerSpecialities", []),
+                "allocatedProviderIds": sched_data.get("allocatedProviderIds", []),
                 "locationScope": sched_data.get("locationScope", {}),
             })
 
@@ -376,6 +409,7 @@ def fetch_all_data(creds: FetchAllDataRequest):
             "production_types": production_types,
             "operatories": operatories,
             "users": users,
+            "operatory_providers": raw_op_prov,
             "slot_duration_minutes": SLOT_DURATION_MINUTES,
         }
 
@@ -502,6 +536,7 @@ async def save_config_excel(config: SaveConfigRequest):
                         "Provider ID": p_id,
                         "Provider Name": p_data.get('name', ''),
                         "Specialty": p_data.get('specialty', p_data.get('providerType', '')),
+                        "Concurrency": p_data.get('concurrency', 'N/A'),
                         "Production Type ID": "N/A",
                         "Production Type Name": "N/A"
                     })
@@ -512,6 +547,7 @@ async def save_config_excel(config: SaveConfigRequest):
                             "Provider ID": p_id,
                             "Provider Name": p_data.get('name', ''),
                             "Specialty": p_data.get('specialty', p_data.get('providerType', '')),
+                            "Concurrency": p_data.get('concurrency', 'N/A'),
                             "Production Type ID": pt_id,
                             "Production Type Name": pt_data['name'] if pt_data else "Unknown"
                         })

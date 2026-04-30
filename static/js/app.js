@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         operatories: [],       // filtered to selected locations
         users: [],             // users with ProviderID
         slotDurationMinutes: 5,
+        operatory_providers: {},
     };
 
     // ============================
@@ -36,13 +37,19 @@ document.addEventListener('DOMContentLoaded', () => {
         btnLoadData: $('btnLoadData'),
         loadStatus: $('loadStatus'),
         // Step 2
+        providerCountBadge: $('providerCountBadge'),
+        selectAllProviders: $('selectAllProviders'),
+        providersGrid: $('providersGrid'),
+        // Step 3
         matrixStats: $('matrixStats'),
         matrixWrapper: $('matrixWrapper'),
         matrixBadge: $('matrixBadge'),
-        // Step 3
+        matrixProviderSelect: $('matrixProviderSelect'),
+        filterHint: $('filterHint'),
+        // Step 4
         operatoriesContainer: $('operatoriesContainer'),
         operatoryBadge: $('operatoryBadge'),
-        // Step 4
+        // Step 5
         durationContainer: $('durationContainer'),
         durationBadge: $('durationBadge'),
         validationSummary: $('validationSummary'),
@@ -66,7 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * @param {boolean} [opts.fromPop] If true, called from popstate — skip pushState
      */
     window.goToStep = function(step, opts = {}) {
-        if (step < 1 || step > 4) return;
+        if (step < 1 || step > 5) return;
         if (step > maxStepReached) return;
 
         currentStep = step;
@@ -118,9 +125,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateStepper() {
-        for (let i = 1; i <= 4; i++) {
+        for (let i = 1; i <= 5; i++) {
             const stepEl = $(`stepperStep${i}`);
-            const lineEl = i < 4 ? $(`stepperLine${i}`) : null;
+            const lineEl = i < 5 ? $(`stepperLine${i}`) : null;
+
+            if (!stepEl) continue;
 
             stepEl.classList.remove('active', 'completed', 'disabled');
 
@@ -164,10 +173,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     operatories: appData.operatories,
                     users: appData.users,
                     slotDurationMinutes: appData.slotDurationMinutes,
+                    operatory_providers: appData.operatory_providers,
                 },
                 maxStepReached,
                 currentStep,
                 selectedLocationIds: getSelectedLocationIds(),
+                selectedProviderIds: getSelectedProviderIds(),
                 apiBaseUrl: els.apiBaseUrl.value.trim(),
             };
             sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -222,6 +233,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Re-render data views if we had loaded data
             if (maxStepReached > 1 && appData.providers.length > 0) {
+                renderProvidersStep();
+                
+                if (session.selectedProviderIds && session.selectedProviderIds.length > 0) {
+                    session.selectedProviderIds.forEach(id => {
+                        const cb = document.querySelector(`.provider-cb[value="${id}"]`);
+                        if (cb) {
+                            cb.checked = true;
+                            const item = cb.closest('.location-item');
+                            if (item) item.classList.add('selected');
+                        }
+                    });
+                    
+                    // Update Select All checkbox state
+                    const allChecked = document.querySelectorAll('.provider-cb:not(:checked)').length === 0;
+                    if (els.selectAllProviders) els.selectAllProviders.checked = allChecked;
+                }
+
                 buildAndRenderMatrix();
                 renderOperatories();
                 renderDurationTable();
@@ -409,16 +437,18 @@ document.addEventListener('DOMContentLoaded', () => {
             appData.productionTypes = data.production_types;
             appData.operatories = data.operatories;
             appData.users = data.users;
+            appData.operatory_providers = data.operatory_providers;
             appData.slotDurationMinutes = data.slot_duration_minutes || 5;
 
             // Build all views
+            renderProvidersStep();
             buildAndRenderMatrix();
             renderOperatories();
             renderDurationTable();
             renderValidationSummary();
 
             // Advance to step 2
-            maxStepReached = 4;
+            maxStepReached = 5;
             goToStep(2);
 
             // Persist session so browser back/forward can restore data
@@ -437,29 +467,168 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // ============================
-    // STEP 2: SPECIALTY MATRIX
+    // STEP 2: SELECT PROVIDERS
     // ============================
 
-    function buildAndRenderMatrix() {
-        const providers = appData.providers;
-        const pts = appData.productionTypes.filter(pt => pt.isActive);
+    function renderProvidersStep() {
+        const provs = appData.providers.filter(p => p.isActive);
+        els.providerCountBadge.textContent = `${provs.length} providers`;
 
-        if (providers.length === 0 || pts.length === 0) {
-            els.matrixWrapper.innerHTML = `
+        if (provs.length === 0) {
+            els.providersGrid.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-icon">📊</div>
-                    <div class="empty-text">No data available for matrix</div>
-                    <div class="empty-sub">${providers.length} providers, ${pts.length} active production types</div>
+                    <div class="empty-icon">👤</div>
+                    <div class="empty-text">No providers found</div>
                 </div>`;
             return;
         }
 
+        els.providersGrid.innerHTML = provs.map(prov => `
+            <label class="location-item" id="provItem-${prov.id}">
+                <input type="checkbox" class="provider-cb" value="${prov.id}"
+                       onchange="handleProviderToggle(this)">
+                <div class="location-info">
+                    <div class="loc-name">${prov.name}</div>
+                    <div class="loc-detail">${prov.providerType || 'Unknown'} · Spec #${prov.specialityId || '—'} · Concurrency: ${prov.concurrency || 'N/A'}</div>
+                </div>
+            </label>
+        `).join('');
+
+        // Reset select all checkbox
+        if (els.selectAllProviders) els.selectAllProviders.checked = false;
+    }
+
+    window.handleProviderToggle = function(cb) {
+        const item = cb.closest('.location-item');
+        item.classList.toggle('selected', cb.checked);
+        
+        // Update Select All checkbox state
+        const allChecked = document.querySelectorAll('.provider-cb:not(:checked)').length === 0;
+        if (els.selectAllProviders) els.selectAllProviders.checked = allChecked;
+        
+        // Trigger data view updates on selection change
+        buildAndRenderMatrix();
+        renderOperatories();
+        saveSession();
+    };
+
+    if (els.selectAllProviders) {
+        els.selectAllProviders.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            document.querySelectorAll('.provider-cb').forEach(cb => {
+                cb.checked = isChecked;
+                const item = cb.closest('.location-item');
+                if (item) item.classList.toggle('selected', isChecked);
+            });
+            
+            buildAndRenderMatrix();
+            renderOperatories();
+            saveSession();
+        });
+    }
+
+    function getSelectedProviderIds() {
+        return Array.from(document.querySelectorAll('.provider-cb:checked'))
+            .map(cb => parseInt(cb.value));
+    }
+
+    function getSelectedProviders() {
+        const selectedIds = getSelectedProviderIds();
+        return appData.providers.filter(p => p.isActive && selectedIds.includes(p.id));
+    }
+
+
+    // ============================
+    // STEP 4: SPECIALTY MATRIX
+    // ============================
+
+    /**
+     * Populate the provider filter dropdown.
+     * Called once after data load; preserves current selection if still valid.
+     */
+    function populateProviderDropdown() {
+        const providers = getSelectedProviders();
+        const prev = els.matrixProviderSelect.value;
+
+        let html = '<option value="all">All Providers</option>';
+        providers.forEach(p => {
+            html += `<option value="${p.id}">${p.name} (${p.providerType || 'Unknown'})</option>`;
+        });
+        els.matrixProviderSelect.innerHTML = html;
+
+        // Restore previous selection if still valid
+        if (prev !== 'all' && providers.some(p => String(p.id) === prev)) {
+            els.matrixProviderSelect.value = prev;
+        }
+    }
+
+    // Listen for filter changes
+    els.matrixProviderSelect.addEventListener('change', () => {
+        buildAndRenderMatrix();
+        saveSession();
+    });
+
+    function buildAndRenderMatrix() {
+        const allProviders = getSelectedProviders();
+        const allPts = appData.productionTypes.filter(pt => pt.isActive);
+
+        // Populate dropdown (idempotent — preserves selection)
+        populateProviderDropdown();
+
+        if (allProviders.length === 0 || allPts.length === 0) {
+            els.matrixWrapper.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">📊</div>
+                    <div class="empty-text">No data available for matrix</div>
+                    <div class="empty-sub">${allProviders.length} providers, ${allPts.length} active production types</div>
+                </div>`;
+            els.filterHint.textContent = '';
+            return;
+        }
+
+        // --- Apply provider filter ---
+        const selectedValue = els.matrixProviderSelect.value;
+        let filteredProviders;
+        let filteredPts;
+
+        if (selectedValue === 'all') {
+            filteredProviders = allProviders;
+            filteredPts = allPts;
+            els.filterHint.textContent = '';
+        } else {
+            const selectedId = parseInt(selectedValue, 10);
+            const selectedProv = allProviders.find(p => p.id === selectedId);
+            filteredProviders = selectedProv ? [selectedProv] : allProviders;
+
+            // Filter PTs to those compatible with the selected provider:
+            // 1. PT has this provider in its allocatedProviderIds, OR
+            // 2. Fallback: PT's providerSpecialities includes provider's specialityId
+            filteredPts = allPts.filter(pt => {
+                const allocIds = pt.allocatedProviderIds || [];
+                const ptSpecs = pt.providerSpecialities || [];
+
+                // If scheduler has explicit provider allocations, use them
+                if (allocIds.length > 0) {
+                    return allocIds.includes(selectedId);
+                }
+                // Fallback to specialty-based match
+                if (selectedProv && selectedProv.specialityId && ptSpecs.length > 0) {
+                    return ptSpecs.includes(selectedProv.specialityId);
+                }
+                // If no data available, include the PT
+                return true;
+            });
+
+            const provName = selectedProv ? selectedProv.name : 'Unknown';
+            els.filterHint.textContent = `Showing ${filteredPts.length} compatible production type${filteredPts.length !== 1 ? 's' : ''} for ${provName}`;
+        }
+
+        // --- Build matrix data ---
         let matchCount = 0;
         let mismatchCount = 0;
 
-        // Build matrix data
-        const matrix = providers.map(prov => {
-            const row = pts.map(pt => {
+        const matrix = filteredProviders.map(prov => {
+            const row = filteredPts.map(pt => {
                 const provSpecId = prov.specialityId;
                 const ptSpecs = pt.providerSpecialities || [];
 
@@ -476,7 +645,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return { provider: prov, cells: row };
         });
 
-        // Render stats
+        // --- Render stats ---
+        const showingAll = selectedValue === 'all';
         els.matrixStats.innerHTML = `
             <div class="stat-card teal">
                 <div>
@@ -492,13 +662,13 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div class="stat-card violet">
                 <div>
-                    <div class="stat-value">${providers.length}</div>
+                    <div class="stat-value">${filteredProviders.length}${!showingAll ? ' / ' + allProviders.length : ''}</div>
                     <div class="stat-label">Providers</div>
                 </div>
             </div>
             <div class="stat-card amber">
                 <div>
-                    <div class="stat-value">${pts.length}</div>
+                    <div class="stat-value">${filteredPts.length}${!showingAll ? ' / ' + allPts.length : ''}</div>
                     <div class="stat-label">Production Types</div>
                 </div>
             </div>
@@ -506,13 +676,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         els.matrixBadge.textContent = `${matchCount} matches`;
 
-        // Render table
+        // --- Render table ---
+        if (filteredPts.length === 0) {
+            els.matrixWrapper.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <div class="empty-text">No compatible production types found</div>
+                    <div class="empty-sub">This provider has no allocated or specialty-matching production types</div>
+                </div>`;
+            return;
+        }
+
         let html = '<table class="matrix-table">';
 
         // Header row
         html += '<thead><tr>';
         html += '<th class="corner">Provider</th>';
-        pts.forEach(pt => {
+        filteredPts.forEach(pt => {
             const specLabel = (pt.providerSpecialities || []).join(', ') || '—';
             html += `<th class="col-header" data-tooltip="Spec: ${specLabel}">${pt.name}</th>`;
         });
@@ -524,7 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
             html += '<tr>';
             html += `<td class="row-header">
                 <div class="provider-name">${row.provider.name}</div>
-                <div class="provider-spec">${row.provider.providerType} · Spec #${row.provider.specialityId || '—'}</div>
+                <div class="provider-spec">${row.provider.providerType} · Spec #${row.provider.specialityId || '—'} · Concurrency: ${row.provider.concurrency || 'N/A'}</div>
             </td>`;
             row.cells.forEach(cell => {
                 const icon = cell.status === 'match' ? '✓' : cell.status === 'mismatch' ? '✗' : '·';
@@ -593,12 +773,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="badge badge-amber">${locOps.length} operatories</span>
                     </div>
                     <div class="operatory-grid">
-                        ${locOps.length > 0 ? locOps.map(op => `
+                        ${locOps.length > 0 ? locOps.map(op => {
+                            const providerIds = appData.operatory_providers && appData.operatory_providers[op.id] ? appData.operatory_providers[op.id] : [];
+                            const selectedProviderIds = getSelectedProviderIds();
+                            const providerTags = providerIds.map(pid => {
+                                const prov = appData.providers.find(p => p.id === pid);
+                                const name = prov ? prov.name : `ID: ${pid}`;
+                                const isSelected = selectedProviderIds.includes(pid);
+                                return `<span class="op-provider-tag${isSelected ? ' selected' : ''}" title="${isSelected ? 'Selected provider' : 'Not selected'}">${name}</span>`;
+                            });
+                            
+                            const providersHtml = providerTags.length > 0
+                                ? `<div class="op-providers"><strong>Providers:</strong><div class="op-provider-tags">${providerTags.join('')}</div></div>`
+                                : `<div class="op-providers op-providers-empty"><em>No providers assigned</em></div>`;
+
+                            return `
                             <div class="operatory-card">
                                 <div class="op-name">${op.name}</div>
                                 <div class="op-id">ID: ${op.id}</div>
+                                ${providersHtml}
                             </div>
-                        `).join('') : '<div style="color:var(--text-muted); font-size:13px; padding:12px;">No operatories in this location</div>'}
+                            `;
+                        }).join('') : '<div style="color:var(--text-muted); font-size:13px; padding:12px;">No operatories in this location</div>'}
                     </div>
                 </div>
             `;
@@ -685,7 +881,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const warnings = [];
         const infos = [];
 
-        const providers = appData.providers;
+        const providers = getSelectedProviders();
         const pts = appData.productionTypes.filter(pt => pt.isActive);
         const ops = appData.operatories;
         const selectedLocs = getSelectedLocationIds();
@@ -785,8 +981,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     els.btnExport.addEventListener('click', async () => {
         const selectedProductionTypeIds = {};
+        const selectedProviders = getSelectedProviders();
         // For export, map all matching PTs to each provider
-        appData.providers.forEach(prov => {
+        selectedProviders.forEach(prov => {
             const matchingPTs = appData.productionTypes.filter(pt =>
                 (pt.providerSpecialities || []).includes(prov.specialityId)
             );
@@ -797,13 +994,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const payload = {
             locations: getSelectedLocationIds().map(String),
-            providers: appData.providers.map(p => String(p.id)),
+            providers: selectedProviders.map(p => String(p.id)),
             productionTypes: selectedProductionTypeIds,
             excludedInsurance: document.getElementById('excludedInsurance').value,
             notes: document.getElementById('additionalNotes').value,
             botEnabled: document.getElementById('botFunctionality').checked,
             full_locations: appData.locations,
-            full_providers: appData.providers,
+            full_providers: selectedProviders,
             full_production_types: appData.productionTypes,
         };
 

@@ -80,7 +80,7 @@
             <div class="stepper-line" id="stepperLine1"></div>
             <div class="stepper-step disabled" data-step="2" id="stepperStep2">
                 <div class="step-number">2</div>
-                <div class="step-label">Specialty Matrix</div>
+                <div class="step-label">Select Providers</div>
             </div>
             <div class="stepper-line" id="stepperLine2"></div>
             <div class="stepper-step disabled" data-step="3" id="stepperStep3">
@@ -90,6 +90,11 @@
             <div class="stepper-line" id="stepperLine3"></div>
             <div class="stepper-step disabled" data-step="4" id="stepperStep4">
                 <div class="step-number">4</div>
+                <div class="step-label">Specialty Matrix</div>
+            </div>
+            <div class="stepper-line" id="stepperLine4"></div>
+            <div class="stepper-step disabled" data-step="5" id="stepperStep5">
+                <div class="step-number">5</div>
                 <div class="step-label">Validation & Export</div>
             </div>
         </nav>
@@ -148,37 +153,28 @@
         </section>
 
         <!-- ==========================================
-             STEP 2: Provider × Production Type Matrix
+             STEP 2: Select Providers
              ========================================== -->
         <section class="step-panel" id="stepPanel2">
-
             <div class="glass-card">
                 <div class="card-title">
-                    <span class="icon">🧬</span>
-                    Provider × Production Type — Specialty Match
-                    <span class="badge badge-violet" id="matrixBadge"></span>
+                    <span class="icon">👤</span>
+                    Select Providers
+                    <span class="badge badge-violet" id="providerCountBadge"></span>
                 </div>
-
-                <!-- Stats -->
-                <div class="matrix-stats" id="matrixStats"></div>
-
-                <!-- Matrix -->
-                <div class="matrix-wrapper" id="matrixWrapper">
+                
+                <div style="margin-bottom: 12px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" id="selectAllProviders" style="accent-color:var(--accent-teal);">
+                        <strong>Select All Providers</strong>
+                    </label>
+                </div>
+                
+                <div class="location-grid" id="providersGrid">
+                    <!-- provider checkboxes injected here -->
                     <div class="empty-state">
-                        <div class="empty-icon">📊</div>
-                        <div class="empty-text">Matrix will appear after data is loaded</div>
-                    </div>
-                </div>
-
-                <!-- Legend -->
-                <div class="matrix-legend">
-                    <div class="legend-item">
-                        <div class="legend-dot match"></div>
-                        <span>Specialty Match</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-dot mismatch"></div>
-                        <span>Specialty Mismatch</span>
+                        <div class="empty-icon">👤</div>
+                        <div class="empty-text">Providers will appear after data is loaded</div>
                     </div>
                 </div>
             </div>
@@ -211,14 +207,68 @@
 
             <div class="step-nav">
                 <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
-                <button class="btn btn-primary" onclick="goToStep(4)">Next: Validation →</button>
+                <button class="btn btn-primary" onclick="goToStep(4)">Next: Specialty Matrix →</button>
             </div>
         </section>
 
         <!-- ==========================================
-             STEP 4: Duration Validation & Summary
+             STEP 4: Provider × Production Type Matrix
              ========================================== -->
         <section class="step-panel" id="stepPanel4">
+
+            <div class="glass-card">
+                <div class="card-title">
+                    <span class="icon">🧬</span>
+                    Provider × Production Type — Specialty Match
+                    <span class="badge badge-violet" id="matrixBadge"></span>
+                </div>
+
+                <!-- Provider Filter -->
+                <div class="matrix-filter" id="matrixFilter">
+                    <label class="filter-label" for="matrixProviderSelect">
+                        <span class="filter-icon">👤</span>
+                        Filter by Provider
+                    </label>
+                    <select class="form-input filter-select" id="matrixProviderSelect">
+                        <option value="all">All Providers</option>
+                    </select>
+                    <span class="filter-hint" id="filterHint"></span>
+                </div>
+
+                <!-- Stats -->
+                <div class="matrix-stats" id="matrixStats"></div>
+
+                <!-- Matrix -->
+                <div class="matrix-wrapper" id="matrixWrapper">
+                    <div class="empty-state">
+                        <div class="empty-icon">📊</div>
+                        <div class="empty-text">Matrix will appear after data is loaded</div>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div class="matrix-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot match"></div>
+                        <span>Specialty Match</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot mismatch"></div>
+                        <span>Specialty Mismatch</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step-nav">
+                <button class="btn btn-secondary" onclick="goToStep(3)">← Back</button>
+                <button class="btn btn-primary" onclick="goToStep(5)">Next: Validation →</button>
+            </div>
+        </section>
+
+        <!-- ==========================================
+             STEP 5: Duration Validation & Summary
+             ========================================== -->
+        <section class="step-panel" id="stepPanel5">
 
             <!-- Duration Table -->
             <div class="glass-card">
@@ -279,7 +329,7 @@
             </div>
 
             <div class="step-nav">
-                <button class="btn btn-secondary" onclick="goToStep(3)">← Back</button>
+                <button class="btn btn-secondary" onclick="goToStep(4)">← Back</button>
                 <span style="color:var(--text-muted); font-size:12px;">End of validation flow</span>
             </div>
         </section>
