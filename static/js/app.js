@@ -18,6 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
         users: [],             // users with ProviderID
         slotDurationMinutes: 5,
         operatory_providers: {},
+        operatory_production_types: {},
+        allProviderNameMap: {},  // complete provider name map (all locations) for operatory resolution
     };
 
     // ============================
@@ -174,6 +176,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     users: appData.users,
                     slotDurationMinutes: appData.slotDurationMinutes,
                     operatory_providers: appData.operatory_providers,
+                    operatory_production_types: appData.operatory_production_types,
+                    allProviderNameMap: appData.allProviderNameMap,
                 },
                 maxStepReached,
                 currentStep,
@@ -438,6 +442,8 @@ document.addEventListener('DOMContentLoaded', () => {
             appData.operatories = data.operatories;
             appData.users = data.users;
             appData.operatory_providers = data.operatory_providers;
+            appData.operatory_production_types = data.operatory_production_types || {};
+            appData.allProviderNameMap = data.all_provider_name_map || {};
             appData.slotDurationMinutes = data.slot_duration_minutes || 5;
 
             // Build all views
@@ -777,21 +783,45 @@ document.addEventListener('DOMContentLoaded', () => {
                             const providerIds = appData.operatory_providers && appData.operatory_providers[op.id] ? appData.operatory_providers[op.id] : [];
                             const selectedProviderIds = getSelectedProviderIds();
                             const providerTags = providerIds.map(pid => {
+                                // First try location-filtered providers, then fall back to the full name map
                                 const prov = appData.providers.find(p => p.id === pid);
-                                const name = prov ? prov.name : `ID: ${pid}`;
+                                let name;
+                                let isActive = false;
+                                if (prov) {
+                                    name = prov.name;
+                                    isActive = prov.isActive;
+                                } else {
+                                    const lookup = appData.allProviderNameMap && appData.allProviderNameMap[String(pid)];
+                                    name = lookup ? lookup.name : `ID: ${pid}`;
+                                    isActive = lookup ? lookup.isActive : false;
+                                }
                                 const isSelected = selectedProviderIds.includes(pid);
-                                return `<span class="op-provider-tag${isSelected ? ' selected' : ''}" title="${isSelected ? 'Selected provider' : 'Not selected'}">${name}</span>`;
+                                const activeClass = isActive ? '' : ' inactive';
+                                return `<span class="op-provider-tag${isSelected ? ' selected' : ''}${activeClass}" title="${isSelected ? 'Selected provider' : (isActive ? 'Active (not selected)' : 'Inactive provider')}">${name}</span>`;
                             });
                             
                             const providersHtml = providerTags.length > 0
                                 ? `<div class="op-providers"><strong>Providers:</strong><div class="op-provider-tags">${providerTags.join('')}</div></div>`
                                 : `<div class="op-providers op-providers-empty"><em>No providers assigned</em></div>`;
 
+                            const ptIds = appData.operatory_production_types && appData.operatory_production_types[op.id] ? appData.operatory_production_types[op.id] : [];
+                            const ptTags = ptIds.map(ptId => {
+                                const pt = appData.productionTypes.find(p => p.id === ptId);
+                                return pt ? pt.name : `ID: ${ptId}`;
+                            }).filter(name => name.toLowerCase() !== 'lunch').map(name => {
+                                return `<span class="op-pt-tag" title="Production Type">${name}</span>`;
+                            });
+
+                            const ptsHtml = ptTags.length > 0
+                                ? `<div class="op-pts"><strong>Production Types:</strong><div class="op-pt-tags">${ptTags.join('')}</div></div>`
+                                : `<div class="op-pts op-pts-empty"><em>No production types linked</em></div>`;
+
                             return `
                             <div class="operatory-card">
                                 <div class="op-name">${op.name}</div>
                                 <div class="op-id">ID: ${op.id}</div>
                                 ${providersHtml}
+                                ${ptsHtml}
                             </div>
                             `;
                         }).join('') : '<div style="color:var(--text-muted); font-size:13px; padding:12px;">No operatories in this location</div>'}
@@ -828,7 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <tr>
                         <th>ID</th>
                         <th>Production Type</th>
-                        <th>Slots</th>
+                        <th>Specialty Count</th>
                         <th>Duration (min)</th>
                         <th>Specialties</th>
                         <th>Status</th>
@@ -842,7 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         pts.forEach(pt => {
             const duration = pt.durationMinutes || 0;
-            const slots = pt.slotLength || 0;
+            const specialtyCount = (pt.providerSpecialities || []).length;
             const specs = (pt.providerSpecialities || []).join(', ') || '—';
 
             let statusHtml;
@@ -858,7 +888,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <tr>
                     <td>${pt.id}</td>
                     <td>${pt.name}</td>
-                    <td>${slots}</td>
+                    <td>${specialtyCount}</td>
                     <td>${duration > 0 ? duration + ' min' : '—'}</td>
                     <td>${specs}</td>
                     <td>${statusHtml}</td>
@@ -877,39 +907,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // ============================
 
     function renderValidationSummary() {
-        const errors = [];
-        const warnings = [];
-        const infos = [];
-
         const providers = getSelectedProviders();
         const pts = appData.productionTypes.filter(pt => pt.isActive);
         const ops = appData.operatories;
         const selectedLocs = getSelectedLocationIds();
 
+        const providerInsights = {};
+        const ptInsights = {};
+        const generalInsights = { errors: [], warnings: [], infos: [] };
+
+        providers.forEach(p => providerInsights[p.id] = { name: p.name, errors: [], warnings: [], infos: [] });
+        pts.forEach(pt => ptInsights[pt.id] = { name: pt.name, errors: [], warnings: [], infos: [] });
+
         // 1. Specialty mismatch check
-        let matchCount = 0;
-        let mismatchCount = 0;
         providers.forEach(prov => {
             if (!prov.specialityId) {
-                warnings.push(`Provider "${prov.name}" has no specialty ID assigned.`);
+                providerInsights[prov.id].warnings.push(`No specialty ID assigned.`);
                 return;
             }
-            pts.forEach(pt => {
-                const ptSpecs = pt.providerSpecialities || [];
-                if (ptSpecs.length > 0 && ptSpecs.includes(prov.specialityId)) {
-                    matchCount++;
-                }
-            });
-        });
-
-        // Overall matrix stats
-        providers.forEach(prov => {
-            if (!prov.specialityId) return;
             const matchingPTs = pts.filter(pt =>
                 (pt.providerSpecialities || []).includes(prov.specialityId)
             );
             if (matchingPTs.length === 0) {
-                errors.push(`Provider "${prov.name}" (Spec #${prov.specialityId}) has NO matching production types.`);
+                providerInsights[prov.id].errors.push(`No matching production types for Specialty #${prov.specialityId}.`);
             }
         });
 
@@ -919,53 +939,172 @@ document.addEventListener('DOMContentLoaded', () => {
             const loc = appData.locations.find(l => l.id === lid);
             const locName = loc ? loc.name : `Location #${lid}`;
             if (locOps.length === 0) {
-                errors.push(`Location "${locName}" has no operatories.`);
+                generalInsights.errors.push(`Location "${locName}" has no operatories.`);
             }
         });
 
         // 3. Duration check
-        const zeroDurationPTs = pts.filter(pt => (pt.durationMinutes || 0) === 0);
-        if (zeroDurationPTs.length > 0) {
-            warnings.push(`${zeroDurationPTs.length} production type(s) have no duration configured: ${zeroDurationPTs.map(p => p.name).join(', ')}.`);
-        }
+        pts.forEach(pt => {
+            if ((pt.durationMinutes || 0) === 0) {
+                ptInsights[pt.id].warnings.push(`No duration configured.`);
+            }
+        });
 
-        // 4. Providers with no specialty
-        const noSpecProviders = providers.filter(p => !p.specialityId);
-        if (noSpecProviders.length > 0) {
-            warnings.push(`${noSpecProviders.length} provider(s) have no specialty: ${noSpecProviders.map(p => p.name).join(', ')}.`);
-        }
+        // 4. Production types with no specialties configured or multiple
+        pts.forEach(pt => {
+            const specCount = (pt.providerSpecialities || []).length;
+            if (specCount === 0) {
+                ptInsights[pt.id].warnings.push(`No provider specialty configured.`);
+            } else if (specCount > 1) {
+                ptInsights[pt.id].warnings.push(`Multiple specialty IDs mapped (${specCount}).`);
+            } else {
+                ptInsights[pt.id].infos.push(`Exactly one specialty mapped.`);
+            }
+        });
 
-        // 5. Production types with no specialties configured
-        const noSpecPTs = pts.filter(pt => (pt.providerSpecialities || []).length === 0);
-        if (noSpecPTs.length > 0) {
-            warnings.push(`${noSpecPTs.length} production type(s) have no provider specialty configured: ${noSpecPTs.map(p => p.name).join(', ')}.`);
-        }
+        // 5. Extract scheduled days from calendar templates
+        const ptSchedules = {}; // ptId -> set of { templateName, dayOfWeek }
+        const calTemplates = appData.raw_calendar_templates || [];
+        
+        calTemplates.forEach(t => {
+            const ptIdStr = t.productionTypeId;
+            let ptMap = {};
+            try {
+                if (typeof ptIdStr === 'string') ptMap = JSON.parse(ptIdStr);
+            } catch (e) {}
+            
+            const recurrences = t.templateRecurrence || [];
+            const days = recurrences.map(r => r.dayOfWeek);
+            const templateName = t.templateName || `Template #${t.templateId}`;
+            
+            Object.values(ptMap).forEach(ptList => {
+                (ptList || []).forEach(ptId => {
+                    if (!ptSchedules[ptId]) ptSchedules[ptId] = [];
+                    ptSchedules[ptId].push({
+                        templateName: templateName,
+                        days: days
+                    });
+                });
+            });
+        });
 
-        // Render
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+        pts.forEach(pt => {
+            const schedules = ptSchedules[pt.id] || [];
+            const ptDuration = pt.durationMinutes || 0;
+            
+            if (schedules.length > 0) {
+                const daySet = new Set();
+                const templateNames = new Set();
+                schedules.forEach(s => {
+                    templateNames.add(s.templateName);
+                    s.days.forEach(d => {
+                        if (d >= 0 && d <= 6) daySet.add(dayNames[d]);
+                    });
+                });
+                
+                const dayStr = Array.from(daySet).join(', ') || 'None';
+                const schedStr = Array.from(templateNames).join(', ');
+                ptInsights[pt.id].infos.push(`Scheduled on: ${dayStr} (Templates: ${schedStr})`);
+                
+                pt._scheduledDays = dayStr;
+                pt._scheduledTemplates = schedStr;
+            } else {
+                ptInsights[pt.id].warnings.push(`Not scheduled in any calendar templates.`);
+                pt._scheduledDays = 'None';
+                pt._scheduledTemplates = 'None';
+            }
+            pt._computedDurations = [ptDuration];
+        });
+
+        // 6. Provider concurrent appointments from availability templates
+        const provTemplates = appData.raw_provider_availability_templates || [];
+        const provConcurrent = {};
+        provTemplates.forEach(t => {
+            const isConcurrent = t.isConcurrent || t.allowConcurrentAppointments || t.concurrentAppointments || t.concurrent || false;
+            const pIds = t.providerId ? [t.providerId] : (t.providerIds || []);
+            pIds.forEach(pid => {
+                if (isConcurrent) provConcurrent[pid] = true;
+            });
+        });
+
+        providers.forEach(prov => {
+            const hasConcurrent = provConcurrent[prov.id] === true;
+            prov._isConcurrent = hasConcurrent; // save for export
+            if (hasConcurrent) {
+                providerInsights[prov.id].infos.push(`Concurrent appointments enabled in availability templates.`);
+            }
+        });
+
+        // 7. Render Grouped Summary
         let html = '';
 
-        if (errors.length === 0 && warnings.length === 0) {
-            html += `<div class="validation-item success">
+        function renderGroup(title, icon, insightsDict) {
+            let groupHtml = '';
+            let hasContent = false;
+            
+            Object.values(insightsDict).forEach(item => {
+                if (item.errors.length === 0 && item.warnings.length === 0 && item.infos.length === 0) return;
+                hasContent = true;
+                
+                groupHtml += `<div style="margin-bottom: 12px; padding: 12px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle);">
+                    <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">${item.name}</div>`;
+                
+                item.errors.forEach(e => {
+                    groupHtml += `<div class="validation-item error"><span class="v-icon">❌</span><span>${e}</span></div>`;
+                });
+                item.warnings.forEach(w => {
+                    groupHtml += `<div class="validation-item warning"><span class="v-icon">⚠️</span><span>${w}</span></div>`;
+                });
+                item.infos.forEach(i => {
+                    groupHtml += `<div class="validation-item info" style="background-color: var(--surface-bg); border-left: 4px solid var(--accent-blue);">
+                        <span class="v-icon" style="color: var(--accent-blue);">ℹ️</span><span>${i}</span></div>`;
+                });
+                groupHtml += `</div>`;
+            });
+
+            if (hasContent) {
+                html += `
+                <div style="margin-bottom: 24px;">
+                    <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <span>${icon}</span> ${title}
+                    </div>
+                    ${groupHtml}
+                </div>`;
+            }
+        }
+
+        // General insights (Locations)
+        if (generalInsights.errors.length > 0 || generalInsights.warnings.length > 0) {
+            html += `
+            <div style="margin-bottom: 24px;">
+                <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                    <span>📍</span> Locations
+                </div>
+                <div style="padding: 12px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle);">`;
+            
+            generalInsights.errors.forEach(e => {
+                html += `<div class="validation-item error"><span class="v-icon">❌</span><span>${e}</span></div>`;
+            });
+            generalInsights.warnings.forEach(w => {
+                html += `<div class="validation-item warning"><span class="v-icon">⚠️</span><span>${w}</span></div>`;
+            });
+            
+            html += `</div></div>`;
+        }
+
+        renderGroup('Providers', '👤', providerInsights);
+        renderGroup('Production Types', '⚡', ptInsights);
+
+        if (!html) {
+            html = `<div class="validation-item success">
                 <span class="v-icon">✅</span>
                 <span>All checks passed — configuration looks good!</span>
             </div>`;
         }
 
-        errors.forEach(e => {
-            html += `<div class="validation-item error">
-                <span class="v-icon">❌</span>
-                <span>${e}</span>
-            </div>`;
-        });
-
-        warnings.forEach(w => {
-            html += `<div class="validation-item warning">
-                <span class="v-icon">⚠️</span>
-                <span>${w}</span>
-            </div>`;
-        });
-
-        // Info stats
+        // Overall stats
         html += `<div class="validation-item success" style="margin-top:12px;">
             <span class="v-icon">📊</span>
             <span>Summary: ${providers.length} providers, ${pts.length} active PTs, ${ops.length} operatories across ${selectedLocs.length} locations</span>
@@ -1000,8 +1139,17 @@ document.addEventListener('DOMContentLoaded', () => {
             notes: document.getElementById('additionalNotes').value,
             botEnabled: document.getElementById('botFunctionality').checked,
             full_locations: appData.locations,
-            full_providers: selectedProviders,
-            full_production_types: appData.productionTypes,
+            full_providers: selectedProviders.map(p => ({
+                ...p,
+                concurrentFromTemplate: !!p._isConcurrent
+            })),
+            full_production_types: appData.productionTypes.map(pt => ({
+                ...pt,
+                computedDurations: pt._computedDurations || [],
+                scheduledDays: pt._scheduledDays || 'None',
+                scheduledTemplates: pt._scheduledTemplates || 'None',
+                specialtyCount: (pt.providerSpecialities || []).length
+            })),
         };
 
         try {

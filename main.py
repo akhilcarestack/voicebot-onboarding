@@ -13,6 +13,7 @@ import logging
 from urllib.parse import urlparse
 import os
 from dotenv import load_dotenv
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Load environment variables from the app directory
@@ -244,6 +245,31 @@ def fetch_all_data(creds: FetchAllDataRequest):
             resp.raise_for_status()
             return resp.json()
 
+        def _fetch_calendar_templates():
+            resp = requests.get(
+                f"{scheduler_base}/production-calender/template",
+                headers=headers, params=location_params, timeout=30
+            )
+            resp.raise_for_status()
+            return resp.json()
+            
+        def _fetch_provider_availability_templates():
+            resp = requests.get(
+                f"{scheduler_base}/provider-availability/template",
+                headers=headers, params=location_params, timeout=30
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+        def _fetch_all_providers():
+            """Fetch ALL providers (no location filter) for name resolution."""
+            resp = requests.get(
+                f"{api_base_url}/api/v1.0/providers",
+                headers=headers, timeout=30
+            )
+            resp.raise_for_status()
+            return resp.json()
+
         def _fetch_users():
             url = f"{api_base_url}/setup/user/grid-get-users-all"
             payload = {
@@ -290,20 +316,46 @@ def fetch_all_data(creds: FetchAllDataRequest):
             return filtered
 
         # Execute fetches in parallel (users is slow due to N+1, but included)
-        with ThreadPoolExecutor(max_workers=6) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             future_providers = executor.submit(_fetch_providers)
+            future_all_providers = executor.submit(_fetch_all_providers)
             future_pts = executor.submit(_fetch_production_types)
             future_ops = executor.submit(_fetch_operatories)
             future_sched = executor.submit(_fetch_scheduler_pts)
             future_users = executor.submit(_fetch_users)
             future_op_prov = executor.submit(_fetch_operatory_providers)
+            future_templates = executor.submit(_fetch_calendar_templates)
+            future_prov_avail_templates = executor.submit(_fetch_provider_availability_templates)
 
             raw_providers = future_providers.result()
+            raw_all_providers = future_all_providers.result()
             raw_pts = future_pts.result()
             raw_ops = future_ops.result()
             raw_sched_pts = future_sched.result()
             raw_users = future_users.result()
             raw_op_prov = future_op_prov.result()
+            raw_templates = future_templates.result()
+            raw_prov_avail_templates = future_prov_avail_templates.result()
+
+
+        # --- Build Operatory -> Production Types map ---
+        operatory_production_types = {}
+        for template in raw_templates:
+            pt_id_str = template.get("productionTypeId")
+            if pt_id_str and isinstance(pt_id_str, str):
+                try:
+                    pt_map = json.loads(pt_id_str)
+                    for op_id, pt_list in pt_map.items():
+                        if op_id not in operatory_production_types:
+                            operatory_production_types[op_id] = set()
+                        for pt in pt_list:
+                            operatory_production_types[op_id].add(pt)
+                except json.JSONDecodeError:
+                    pass
+        
+        # Convert sets to lists for JSON serialization
+        for op_id in operatory_production_types:
+            operatory_production_types[op_id] = list(operatory_production_types[op_id])
 
 
         # --- Build user concurrency map ---
@@ -326,6 +378,18 @@ def fetch_all_data(creds: FetchAllDataRequest):
                 "isActive": p.get("isActive", False),
                 "concurrency": user_concurrency_map.get(str(p_id), "N/A"),
             })
+
+        # --- Build complete provider name map from ALL providers (for operatory name resolution) ---
+        all_provider_name_map = {}
+        for p in raw_all_providers:
+            p_id = p.get("id")
+            if p_id is not None:
+                all_provider_name_map[str(p_id)] = {
+                    "name": f"{p.get('firstName', '')} {p.get('lastName', '')}".strip(),
+                    "providerType": p.get("providerType", "Unknown"),
+                    "isActive": p.get("isActive", False),
+                }
+        logger.info(f"Built all_provider_name_map with {len(all_provider_name_map)} providers (location-filtered: {len(providers)})")
 
         # --- Build scheduler PT lookup ---
         sched_pt_map = {}
@@ -410,7 +474,11 @@ def fetch_all_data(creds: FetchAllDataRequest):
             "operatories": operatories,
             "users": users,
             "operatory_providers": raw_op_prov,
+            "operatory_production_types": operatory_production_types,
+            "all_provider_name_map": all_provider_name_map,
             "slot_duration_minutes": SLOT_DURATION_MINUTES,
+            "raw_calendar_templates": raw_templates,
+            "raw_provider_availability_templates": raw_prov_avail_templates,
         }
 
     except requests.RequestException as e:
@@ -424,6 +492,97 @@ def fetch_all_data(creds: FetchAllDataRequest):
         logger.exception("Internal Error during fetch_all_data")
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
+
+
+# --- Probe: Production Calendar Template ---
+
+@app.post("/api/probe-calendar-template")
+def probe_calendar_template(creds: FetchAllDataRequest):
+    """
+    Probe the /scheduler/api/v1.0/production-calender/template endpoint.
+    Returns the raw response for inspection.
+    """
+    try:
+        token = get_carestack_token(creds)
+        api_base_url = creds.base_url.rstrip("/")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Build scheduler URL
+        parsed = urlparse(creds.base_url)
+        domain_parts = parsed.netloc.split('.')
+        subdomain = domain_parts[0] if domain_parts else "api"
+        if not parsed.scheme and not parsed.netloc:
+            subdomain = "api"
+        scheduler_base = f"https://{subdomain}.services.carestack.com/scheduler/api/v1.0"
+
+        location_params = [('locationId', lid) for lid in creds.selected_location_ids]
+
+        url = f"{scheduler_base}/production-calender/template"
+        logger.info(f"[PROBE] Calling: {url} with params: {location_params}")
+
+        resp = requests.get(url, headers=headers, params=location_params, timeout=30)
+        logger.info(f"[PROBE] Status: {resp.status_code}")
+        logger.info(f"[PROBE] Response (first 2000 chars): {resp.text[:2000]}")
+
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Log structure info
+        if isinstance(data, list):
+            logger.info(f"[PROBE] Response is a list with {len(data)} items")
+            if data:
+                logger.info(f"[PROBE] First item keys: {list(data[0].keys()) if isinstance(data[0], dict) else type(data[0])}")
+                # Log first 3 items fully
+                for i, item in enumerate(data[:3]):
+                    logger.info(f"[PROBE] Item {i}: {item}")
+        elif isinstance(data, dict):
+            logger.info(f"[PROBE] Response is a dict with keys: {list(data.keys())}")
+
+        return {
+            "status": resp.status_code,
+            "url_called": url,
+            "params": dict(location_params),
+            "data": data,
+        }
+
+    except requests.RequestException as e:
+        error_msg = str(e)
+        resp_text = ""
+        if getattr(e, 'response', None) is not None:
+            resp_text = e.response.text
+            logger.error(f"[PROBE] API Error Response: {resp_text}")
+        return {
+            "error": error_msg,
+            "response_text": resp_text,
+        }
+    except Exception as e:
+        logger.exception("[PROBE] Internal Error")
+        return {"error": str(e)}
+
+@app.get("/api/debug-templates")
+def debug_templates(locationId: int):
+    try:
+        global TOKEN_CACHE
+        token = TOKEN_CACHE.get("access_token")
+        if not token:
+            return {"error": "No cached token"}
+        
+        headers = {"Authorization": f"Bearer {token}"}
+        base_url = TOKEN_CACHE.get("base_url").rstrip("/")
+        parsed = urlparse(base_url)
+        domain_parts = parsed.netloc.split('.')
+        subdomain = domain_parts[0] if domain_parts else "api"
+        scheduler_base = f"https://{subdomain}.services.carestack.com/scheduler/api/v1.0"
+        
+        cal_resp = requests.get(f"{scheduler_base}/production-calender/template", headers=headers, params={"locationId": locationId}, timeout=30)
+        prov_resp = requests.get(f"{scheduler_base}/provider-availability/template", headers=headers, params={"locationId": locationId}, timeout=30)
+        
+        return {
+            "calendar": cal_resp.json() if cal_resp.status_code == 200 else str(cal_resp.text),
+            "provider": prov_resp.json() if prov_resp.status_code == 200 else str(prov_resp.text)
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # --- Legacy endpoints (kept for backwards compatibility) ---
@@ -530,15 +689,24 @@ async def save_config_excel(config: SaveConfigRequest):
         for p_data in config.full_providers:
             p_id = int(p_data['id'])
             if p_id in selected_prov_ids:
-                pt_ids = config.productionTypes.get(p_id, [])
+                pt_ids = config.productionTypes.get(str(p_id), [])
+                if not pt_ids:
+                    # Also try integer key if str fails
+                    pt_ids = config.productionTypes.get(p_id, [])
+
                 if not pt_ids:
                     provider_rows.append({
                         "Provider ID": p_id,
                         "Provider Name": p_data.get('name', ''),
                         "Specialty": p_data.get('specialty', p_data.get('providerType', '')),
-                        "Concurrency": p_data.get('concurrency', 'N/A'),
+                        "Concurrency (User Info)": p_data.get('concurrency', 'N/A'),
+                        "Concurrent (Availability Template)": p_data.get('concurrentFromTemplate', False),
                         "Production Type ID": "N/A",
-                        "Production Type Name": "N/A"
+                        "Production Type Name": "N/A",
+                        "PT Schedule Durations": "N/A",
+                        "PT Scheduled Days": "N/A",
+                        "PT Scheduled Templates": "N/A",
+                        "PT Specialty Count": "N/A"
                     })
                 else:
                     for pt_id in pt_ids:
@@ -547,9 +715,14 @@ async def save_config_excel(config: SaveConfigRequest):
                             "Provider ID": p_id,
                             "Provider Name": p_data.get('name', ''),
                             "Specialty": p_data.get('specialty', p_data.get('providerType', '')),
-                            "Concurrency": p_data.get('concurrency', 'N/A'),
+                            "Concurrency (User Info)": p_data.get('concurrency', 'N/A'),
+                            "Concurrent (Availability Template)": p_data.get('concurrentFromTemplate', False),
                             "Production Type ID": pt_id,
-                            "Production Type Name": pt_data['name'] if pt_data else "Unknown"
+                            "Production Type Name": pt_data['name'] if pt_data else "Unknown",
+                            "PT Schedule Durations": ", ".join(map(str, pt_data.get('computedDurations', []))) if pt_data else "",
+                            "PT Scheduled Days": pt_data.get('scheduledDays', 'None') if pt_data else "None",
+                            "PT Scheduled Templates": pt_data.get('scheduledTemplates', 'None') if pt_data else "None",
+                            "PT Specialty Count": pt_data.get('specialtyCount', 0) if pt_data else 0
                         })
 
         if provider_rows:
