@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Step 4
         durationContainer: $('durationContainer'),
         durationBadge: $('durationBadge'),
-        validationSummary: $('validationSummary'),
+
         btnExport: $('btnExport'),
         // Global
         loadingOverlay: $('loadingOverlay'),
@@ -1104,7 +1104,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <th>Calendar Durations</th>
                         <th>Scheduled Days</th>
                         <th>Templates</th>
-                        <th>Duration Validation</th>
+                        <th>Validations</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1174,6 +1174,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
+            // Specialty validation
+            const specCount = (pt.providerSpecialities || []).length;
+            if (specCount > 1) {
+                validationHtml += `<br><span class="duration-status error" style="margin-top: 4px; display: inline-block;">✗ Multiple Specialties (${specCount})</span>`;
+            } else if (specCount === 0) {
+                validationHtml += `<br><span class="duration-status warn" style="margin-top: 4px; display: inline-block;">⚠ No Specialty</span>`;
+            } else {
+                validationHtml += `<br><span class="duration-status ok" style="margin-top: 4px; display: inline-block;">✓ 1 Specialty</span>`;
+            }
+
             // Build expandable time ranges row
             let timeRangeDetail = '';
             if (calTimeRanges.length > 0) {
@@ -1215,6 +1225,100 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         html += '</tbody></table>';
+
+        // --- Duration & Specialty Inference ---
+        const ptsNoDefault = [];
+        const ptsNotInCalendar = [];
+        const ptsDurationMismatch = [];
+        const ptsMultipleSpecialties = [];
+        const ptsNoSpecialty = [];
+
+        pts.forEach(pt => {
+            const defaultDuration = pt.durationMinutes || 0;
+            const calData = calDurations[String(pt.id)];
+            const calDurs = calData ? calData.durations : [];
+            const specCount = (pt.providerSpecialities || []).length;
+
+            if (specCount > 1) {
+                ptsMultipleSpecialties.push(pt.name);
+            } else if (specCount === 0) {
+                ptsNoSpecialty.push(pt.name);
+            }
+
+            if (calDurs.length === 0) {
+                ptsNotInCalendar.push(pt.name);
+            } else if (defaultDuration === 0) {
+                ptsNoDefault.push(pt.name);
+            } else {
+                const isMultiple = (d) => d > 0 && d % defaultDuration === 0;
+                const allMultiples = calDurs.every(isMultiple);
+                if (!allMultiples) {
+                    ptsDurationMismatch.push(pt.name);
+                }
+            }
+        });
+
+        if (ptsMultipleSpecialties.length > 0 || ptsNotInCalendar.length > 0 || ptsNoDefault.length > 0 || ptsDurationMismatch.length > 0 || ptsNoSpecialty.length > 0) {
+            html += `
+                <div class="operatory-inference-panel" style="margin-top: 16px;">
+                    <div class="inference-header">
+                        <span class="inference-icon">⚠️</span>
+                        <span class="inference-title">Duration & Specialty Gaps</span>
+                    </div>
+            `;
+            if (ptsMultipleSpecialties.length > 0) {
+                html += `
+                    <p class="inference-desc">The following <strong>${ptsMultipleSpecialties.length}</strong> production type${ptsMultipleSpecialties.length > 1 ? 's have' : ' has'} <em>multiple specialties</em>, which may cause mapping issues.</p>
+                    <div class="inference-tags" style="margin-bottom: 12px;">
+                        ${ptsMultipleSpecialties.map(name => `<span class="inference-tag">${name}</span>`).join('')}
+                    </div>
+                `;
+            }
+            if (ptsNoSpecialty.length > 0) {
+                html += `
+                    <p class="inference-desc">The following <strong>${ptsNoSpecialty.length}</strong> production type${ptsNoSpecialty.length > 1 ? 's have' : ' has'} <em>no specialty</em> assigned.</p>
+                    <div class="inference-tags" style="margin-bottom: 12px;">
+                        ${ptsNoSpecialty.map(name => `<span class="inference-tag">${name}</span>`).join('')}
+                    </div>
+                `;
+            }
+            if (ptsDurationMismatch.length > 0) {
+                html += `
+                    <p class="inference-desc">The following <strong>${ptsDurationMismatch.length}</strong> production type${ptsDurationMismatch.length > 1 ? 's have' : ' has'} calendar durations that are <em>not multiples</em> of their default duration.</p>
+                    <div class="inference-tags" style="margin-bottom: 12px;">
+                        ${ptsDurationMismatch.map(name => `<span class="inference-tag">${name}</span>`).join('')}
+                    </div>
+                `;
+            }
+            if (ptsNotInCalendar.length > 0) {
+                html += `
+                    <p class="inference-desc">The following <strong>${ptsNotInCalendar.length}</strong> production type${ptsNotInCalendar.length > 1 ? 's are' : ' is'} <em>not found in the calendar</em>.</p>
+                    <div class="inference-tags" style="margin-bottom: 12px;">
+                        ${ptsNotInCalendar.map(name => `<span class="inference-tag">${name}</span>`).join('')}
+                    </div>
+                `;
+            }
+            if (ptsNoDefault.length > 0) {
+                html += `
+                    <p class="inference-desc">The following <strong>${ptsNoDefault.length}</strong> production type${ptsNoDefault.length > 1 ? 's have' : ' has'} <em>no default duration set</em>.</p>
+                    <div class="inference-tags" style="margin-bottom: 12px;">
+                        ${ptsNoDefault.map(name => `<span class="inference-tag">${name}</span>`).join('')}
+                    </div>
+                `;
+            }
+            html += `</div>`;
+        } else if (pts.length > 0) {
+            html += `
+                <div class="operatory-inference-panel ok" style="margin-top: 16px;">
+                    <div class="inference-header">
+                        <span class="inference-icon">✅</span>
+                        <span class="inference-title">All Durations & Specialties Valid</span>
+                    </div>
+                    <p class="inference-desc">Every selected production type has a valid calendar duration and exactly one specialty.</p>
+                </div>
+            `;
+        }
+
         els.durationContainer.innerHTML = html;
         els.durationBadge.textContent = `${validCount} match, ${mismatchCount} mismatch, ${noCalendarCount} unconfigured`;
     }
@@ -1239,38 +1343,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ops = appData.operatories;
         const selectedLocs = getSelectedLocationIds();
 
-        const providerInsights = {};
-        const ptInsights = {};
-        const generalInsights = { errors: [], warnings: [], infos: [] };
-
-        providers.forEach(p => providerInsights[p.id] = { name: p.name, errors: [], warnings: [], infos: [] });
-        pts.forEach(pt => ptInsights[pt.id] = { name: pt.name, errors: [], warnings: [], infos: [] });
-
-        // 1. Specialty mismatch check
-        providers.forEach(prov => {
-            if (!prov.specialityId) {
-                providerInsights[prov.id].warnings.push(`No specialty ID assigned.`);
-                return;
-            }
-            const matchingPTs = pts.filter(pt =>
-                (pt.providerSpecialities || []).includes(prov.specialityId)
-            );
-            if (matchingPTs.length === 0) {
-                providerInsights[prov.id].errors.push(`No matching production types for Specialty #${prov.specialityId}.`);
-            }
-        });
-
-        // 2. Operatory check per location
-        selectedLocs.forEach(lid => {
-            const locOps = ops.filter(op => op.locationId === lid);
-            const loc = appData.locations.find(l => l.id === lid);
-            const locName = loc ? loc.name : `Location #${lid}`;
-            if (locOps.length === 0) {
-                generalInsights.errors.push(`Location "${locName}" has no operatories.`);
-            }
-        });
-
-        // 3. Duration check — compare default duration vs calendar durations
+        // 1. Duration check — prepare calendar data for export
         const calDurations = appData.calendarPtDurations || {};
         const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         
@@ -1281,67 +1354,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const calDays = calData ? calData.days.map(d => dayNames[d] || d) : [];
             const calTemplates = calData ? calData.templates : [];
 
-            // Check if default duration is set
-            if (defaultDuration === 0) {
-                ptInsights[pt.id].warnings.push(`No default duration configured (slotLength = 0).`);
-            }
-
-            // Calendar duration validation
             if (calDurs.length === 0) {
-                ptInsights[pt.id].warnings.push(`Not found in any production calendar template slots.`);
                 pt._scheduledDays = 'None';
                 pt._scheduledTemplates = 'None';
                 pt._computedDurations = [defaultDuration];
             } else {
-                // Show calendar schedule info
                 const dayStr = calDays.join(', ') || 'None';
                 const schedStr = calTemplates.join(', ');
-                ptInsights[pt.id].infos.push(`Scheduled on: ${dayStr} (Templates: ${schedStr})`);
                 pt._scheduledDays = dayStr;
                 pt._scheduledTemplates = schedStr;
                 pt._computedDurations = calDurs;
-
-                // Compare default vs calendar durations
-                // Calendar durations can be valid multiples of the default
-                if (defaultDuration > 0) {
-                    const isMultiple = (d) => d > 0 && d % defaultDuration === 0;
-                    const allMultiples = calDurs.every(isMultiple);
-                    const someMultiples = calDurs.some(isMultiple);
-                    const invalidDurs = calDurs.filter(d => !isMultiple(d));
-
-                    if (allMultiples) {
-                        const multiples = calDurs.map(d => `${d / defaultDuration}×`).join(', ');
-                        ptInsights[pt.id].infos.push(`Calendar durations are valid multiples of default ${defaultDuration} min (${multiples}). ✓`);
-                    } else if (someMultiples) {
-                        ptInsights[pt.id].warnings.push(
-                            `Calendar has mixed durations: ${invalidDurs.join(', ')} min are not multiples of default ${defaultDuration} min.`
-                        );
-                    } else {
-                        ptInsights[pt.id].errors.push(
-                            `Calendar duration mismatch: none of ${calDurs.join(', ')} min are multiples of default ${defaultDuration} min.`
-                        );
-                    }
-                } else {
-                    ptInsights[pt.id].infos.push(
-                        `Calendar durations: ${calDurs.join(', ')} min (no default to compare against).`
-                    );
-                }
             }
         });
 
-        // 4. Production types with no specialties configured or multiple
-        pts.forEach(pt => {
-            const specCount = (pt.providerSpecialities || []).length;
-            if (specCount === 0) {
-                ptInsights[pt.id].warnings.push(`No provider specialty configured.`);
-            } else if (specCount > 1) {
-                ptInsights[pt.id].warnings.push(`Multiple specialty IDs mapped (${specCount}).`);
-            } else {
-                ptInsights[pt.id].infos.push(`Exactly one specialty mapped.`);
-            }
-        });
-
-        // 5. Provider concurrent appointments from availability templates
+        // 2. Provider concurrent appointments from availability templates for export
         const provTemplates = appData.raw_provider_availability_templates || [];
         const provConcurrent = {};
         provTemplates.forEach(t => {
@@ -1353,87 +1379,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         providers.forEach(prov => {
-            const hasConcurrent = provConcurrent[prov.id] === true;
-            prov._isConcurrent = hasConcurrent; // save for export
-            if (hasConcurrent) {
-                providerInsights[prov.id].infos.push(`Concurrent appointments enabled in availability templates.`);
-            }
+            prov._isConcurrent = provConcurrent[prov.id] === true; // save for export
         });
-
-        // 7. Render Grouped Summary
-        let html = '';
-
-        function renderGroup(title, icon, insightsDict) {
-            let groupHtml = '';
-            let hasContent = false;
-            
-            Object.values(insightsDict).forEach(item => {
-                if (item.errors.length === 0 && item.warnings.length === 0 && item.infos.length === 0) return;
-                hasContent = true;
-                
-                groupHtml += `<div style="margin-bottom: 12px; padding: 12px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle);">
-                    <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px; color: var(--text-primary);">${item.name}</div>`;
-                
-                item.errors.forEach(e => {
-                    groupHtml += `<div class="validation-item error"><span class="v-icon">❌</span><span>${e}</span></div>`;
-                });
-                item.warnings.forEach(w => {
-                    groupHtml += `<div class="validation-item warning"><span class="v-icon">⚠️</span><span>${w}</span></div>`;
-                });
-                item.infos.forEach(i => {
-                    groupHtml += `<div class="validation-item info" style="background-color: var(--surface-bg); border-left: 4px solid var(--accent-blue);">
-                        <span class="v-icon" style="color: var(--accent-blue);">ℹ️</span><span>${i}</span></div>`;
-                });
-                groupHtml += `</div>`;
-            });
-
-            if (hasContent) {
-                html += `
-                <div style="margin-bottom: 24px;">
-                    <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-                        <span>${icon}</span> ${title}
-                    </div>
-                    ${groupHtml}
-                </div>`;
-            }
-        }
-
-        // General insights (Locations)
-        if (generalInsights.errors.length > 0 || generalInsights.warnings.length > 0) {
-            html += `
-            <div style="margin-bottom: 24px;">
-                <div style="font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-                    <span>📍</span> Locations
-                </div>
-                <div style="padding: 12px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle);">`;
-            
-            generalInsights.errors.forEach(e => {
-                html += `<div class="validation-item error"><span class="v-icon">❌</span><span>${e}</span></div>`;
-            });
-            generalInsights.warnings.forEach(w => {
-                html += `<div class="validation-item warning"><span class="v-icon">⚠️</span><span>${w}</span></div>`;
-            });
-            
-            html += `</div></div>`;
-        }
-
-        renderGroup('Providers', '👤', providerInsights);
-        renderGroup('Production Types', '⚡', ptInsights);
-
-        if (!html) {
-            html = `<div class="validation-item success">
-                <span class="v-icon">✅</span>
-                <span>All checks passed — configuration looks good!</span>
-            </div>`;
-        }
-
-        // Overall stats
-        html += `<div class="validation-item success" style="margin-top:12px;">
-            <span class="v-icon">📊</span>
-            <span>Summary: ${providers.length} providers, ${pts.length} active PTs, ${ops.length} operatories across ${selectedLocs.length} locations</span>
-        </div>`;
-
-        els.validationSummary.innerHTML = html;
     }
 
 

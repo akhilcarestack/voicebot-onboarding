@@ -361,18 +361,31 @@ def fetch_all_data(creds: FetchAllDataRequest):
         # Collect unique rowVersionStamps from templates filtered to selected locations
         day_names_map = {0: "Sun", 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat"}
         stamp_to_template_info = {}  # stamp -> { templateName, days }
+        day_template_counts = {i: 0 for i in range(7)}  # track number of templates per day (limit 2)
+        
         for template in raw_templates:
             if template.get("locationId") not in creds.selected_location_ids:
                 continue
             stamp = template.get("rowVersionStamp")
-            if not stamp:
+            if not stamp or stamp in stamp_to_template_info:
                 continue
+            
             recurrences = template.get("templateRecurrence", [])
-            days = [r.get("dayOfWeek") for r in recurrences if r.get("dayOfWeek") is not None]
+            unique_days = {r.get("dayOfWeek") for r in recurrences if r.get("dayOfWeek") is not None}
+            
+            valid_days = []
+            for day in unique_days:
+                if day_template_counts.get(day, 0) < 2:
+                    valid_days.append(day)
+                    day_template_counts[day] += 1
+            
+            if not valid_days:
+                continue  # Skip template if all its recurrences exceed the 2-per-day limit
+            
             stamp_to_template_info[stamp] = {
                 "templateName": template.get("templateName", f"Template #{template.get('templateId')}"),
                 "templateId": template.get("templateId"),
-                "days": days,
+                "days": valid_days,
             }
 
         logger.info(f"Fetching timestamp details for {len(stamp_to_template_info)} unique templates in selected locations")
