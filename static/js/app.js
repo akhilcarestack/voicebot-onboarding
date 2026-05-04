@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
         operatory_providers: {},
         operatory_production_types: {},
         allProviderNameMap: {},  // complete provider name map (all locations) for operatory resolution
+        calendarPtDurations: {},  // production type calendar durations from timestamp details
     };
 
     // ============================
@@ -42,16 +43,18 @@ document.addEventListener('DOMContentLoaded', () => {
         providerCountBadge: $('providerCountBadge'),
         selectAllProviders: $('selectAllProviders'),
         providersGrid: $('providersGrid'),
+        productionTypeCountBadge: $('productionTypeCountBadge'),
+        selectAllProductionTypes: $('selectAllProductionTypes'),
+        productionTypesGrid: $('productionTypesGrid'),
         // Step 3
+        operatoriesContainer: $('operatoriesContainer'),
+        operatoryBadge: $('operatoryBadge'),
         matrixStats: $('matrixStats'),
         matrixWrapper: $('matrixWrapper'),
         matrixBadge: $('matrixBadge'),
         matrixProviderSelect: $('matrixProviderSelect'),
         filterHint: $('filterHint'),
         // Step 4
-        operatoriesContainer: $('operatoriesContainer'),
-        operatoryBadge: $('operatoryBadge'),
-        // Step 5
         durationContainer: $('durationContainer'),
         durationBadge: $('durationBadge'),
         validationSummary: $('validationSummary'),
@@ -75,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * @param {boolean} [opts.fromPop] If true, called from popstate — skip pushState
      */
     window.goToStep = function(step, opts = {}) {
-        if (step < 1 || step > 5) return;
+        if (step < 1 || step > 4) return;
         if (step > maxStepReached) return;
 
         currentStep = step;
@@ -127,9 +130,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateStepper() {
-        for (let i = 1; i <= 5; i++) {
+        for (let i = 1; i <= 4; i++) {
             const stepEl = $(`stepperStep${i}`);
-            const lineEl = i < 5 ? $(`stepperLine${i}`) : null;
+            const lineEl = i < 4 ? $(`stepperLine${i}`) : null;
 
             if (!stepEl) continue;
 
@@ -178,11 +181,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     operatory_providers: appData.operatory_providers,
                     operatory_production_types: appData.operatory_production_types,
                     allProviderNameMap: appData.allProviderNameMap,
+                    calendarPtDurations: appData.calendarPtDurations,
                 },
                 maxStepReached,
                 currentStep,
                 selectedLocationIds: getSelectedLocationIds(),
                 selectedProviderIds: getSelectedProviderIds(),
+                selectedProductionTypeIds: getSelectedProductionTypeIds(),
                 apiBaseUrl: els.apiBaseUrl.value.trim(),
             };
             sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -252,6 +257,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Update Select All checkbox state
                     const allChecked = document.querySelectorAll('.provider-cb:not(:checked)').length === 0;
                     if (els.selectAllProviders) els.selectAllProviders.checked = allChecked;
+                }
+
+                if (session.selectedProductionTypeIds && session.selectedProductionTypeIds.length > 0) {
+                    session.selectedProductionTypeIds.forEach(id => {
+                        const cb = document.querySelector(`.pt-cb[value="${id}"]`);
+                        if (cb) {
+                            cb.checked = true;
+                            const item = cb.closest('.location-item');
+                            if (item) item.classList.add('selected');
+                        }
+                    });
+                    
+                    // Update Select All checkbox state
+                    const allPTChecked = document.querySelectorAll('.pt-cb:not(:checked)').length === 0;
+                    if (els.selectAllProductionTypes) els.selectAllProductionTypes.checked = allPTChecked;
                 }
 
                 buildAndRenderMatrix();
@@ -438,13 +458,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const data = await res.json();
             appData.providers = data.providers;
-            appData.productionTypes = data.production_types;
+            appData.productionTypes = (data.production_types || []).filter(
+                pt => !pt.name || !pt.name.toLowerCase().includes('lunch')
+            );
             appData.operatories = data.operatories;
             appData.users = data.users;
             appData.operatory_providers = data.operatory_providers;
             appData.operatory_production_types = data.operatory_production_types || {};
             appData.allProviderNameMap = data.all_provider_name_map || {};
             appData.slotDurationMinutes = data.slot_duration_minutes || 5;
+            appData.calendarPtDurations = data.calendar_pt_durations || {};
 
             // Build all views
             renderProvidersStep();
@@ -454,7 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderValidationSummary();
 
             // Advance to step 2
-            maxStepReached = 5;
+            maxStepReached = 4;
             goToStep(2);
 
             // Persist session so browser back/forward can restore data
@@ -486,22 +509,46 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="empty-icon">👤</div>
                     <div class="empty-text">No providers found</div>
                 </div>`;
-            return;
+        } else {
+            els.providersGrid.innerHTML = provs.map(prov => `
+                <label class="location-item" id="provItem-${prov.id}">
+                    <input type="checkbox" class="provider-cb" value="${prov.id}"
+                           onchange="handleProviderToggle(this)">
+                    <div class="location-info">
+                        <div class="loc-name">${prov.name}</div>
+                        <div class="loc-detail">${prov.providerType || 'Unknown'} · Spec #${prov.specialityId || '—'} · Concurrency: ${prov.concurrency || 'N/A'}</div>
+                    </div>
+                </label>
+            `).join('');
         }
-
-        els.providersGrid.innerHTML = provs.map(prov => `
-            <label class="location-item" id="provItem-${prov.id}">
-                <input type="checkbox" class="provider-cb" value="${prov.id}"
-                       onchange="handleProviderToggle(this)">
-                <div class="location-info">
-                    <div class="loc-name">${prov.name}</div>
-                    <div class="loc-detail">${prov.providerType || 'Unknown'} · Spec #${prov.specialityId || '—'} · Concurrency: ${prov.concurrency || 'N/A'}</div>
-                </div>
-            </label>
-        `).join('');
 
         // Reset select all checkbox
         if (els.selectAllProviders) els.selectAllProviders.checked = false;
+
+        // Render PTs
+        const pts = appData.productionTypes.filter(p => p.isActive);
+        els.productionTypeCountBadge.textContent = `${pts.length} production types`;
+
+        if (pts.length === 0) {
+            els.productionTypesGrid.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">⚙️</div>
+                    <div class="empty-text">No production types found</div>
+                </div>`;
+        } else {
+            els.productionTypesGrid.innerHTML = pts.map(pt => `
+                <label class="location-item" id="ptItem-${pt.id}">
+                    <input type="checkbox" class="pt-cb" value="${pt.id}"
+                           onchange="handleProductionTypeToggle(this)">
+                    <div class="location-info">
+                        <div class="loc-name">${pt.name}</div>
+                        <div class="loc-detail">Spec: ${(pt.providerSpecialities || []).join(', ') || 'None'}</div>
+                    </div>
+                </label>
+            `).join('');
+        }
+
+        if (els.selectAllProductionTypes) els.selectAllProductionTypes.checked = false;
     }
 
     window.handleProviderToggle = function(cb) {
@@ -533,6 +580,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    window.handleProductionTypeToggle = function(cb) {
+        const item = cb.closest('.location-item');
+        item.classList.toggle('selected', cb.checked);
+        
+        const allChecked = document.querySelectorAll('.pt-cb:not(:checked)').length === 0;
+        if (els.selectAllProductionTypes) els.selectAllProductionTypes.checked = allChecked;
+        
+        buildAndRenderMatrix();
+        renderOperatories();
+        renderDurationTable();
+        renderValidationSummary();
+        saveSession();
+    };
+
+    if (els.selectAllProductionTypes) {
+        els.selectAllProductionTypes.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            document.querySelectorAll('.pt-cb').forEach(cb => {
+                cb.checked = isChecked;
+                const item = cb.closest('.location-item');
+                if (item) item.classList.toggle('selected', isChecked);
+            });
+            
+            buildAndRenderMatrix();
+            renderOperatories();
+            renderDurationTable();
+            renderValidationSummary();
+            saveSession();
+        });
+    }
+
     function getSelectedProviderIds() {
         return Array.from(document.querySelectorAll('.provider-cb:checked'))
             .map(cb => parseInt(cb.value));
@@ -541,6 +619,16 @@ document.addEventListener('DOMContentLoaded', () => {
     function getSelectedProviders() {
         const selectedIds = getSelectedProviderIds();
         return appData.providers.filter(p => p.isActive && selectedIds.includes(p.id));
+    }
+
+    function getSelectedProductionTypeIds() {
+        return Array.from(document.querySelectorAll('.pt-cb:checked'))
+            .map(cb => parseInt(cb.value));
+    }
+
+    function getSelectedProductionTypes() {
+        const selectedIds = getSelectedProductionTypeIds();
+        return appData.productionTypes.filter(pt => pt.isActive && selectedIds.includes(pt.id));
     }
 
 
@@ -576,7 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function buildAndRenderMatrix() {
         const allProviders = getSelectedProviders();
-        const allPts = appData.productionTypes.filter(pt => pt.isActive);
+        const allPts = getSelectedProductionTypes();
 
         // Populate dropdown (idempotent — preserves selection)
         populateProviderDropdown();
@@ -725,6 +813,61 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         html += '</tbody></table>';
 
+        // --- Specialty Matrix Inference ---
+        const providersWithNoMatches = [];
+        const ptsWithNoMatches = [];
+
+        matrix.forEach(row => {
+            const hasMatch = row.cells.some(c => c.status === 'match');
+            if (!hasMatch) {
+                providersWithNoMatches.push(row.provider.name);
+            }
+        });
+
+        filteredPts.forEach((pt, ptIndex) => {
+            const hasMatch = matrix.some(row => row.cells[ptIndex].status === 'match');
+            if (!hasMatch) {
+                ptsWithNoMatches.push(pt.name);
+            }
+        });
+
+        if (providersWithNoMatches.length > 0 || ptsWithNoMatches.length > 0) {
+            html += `
+                <div class="operatory-inference-panel" style="margin-top: 16px;">
+                    <div class="inference-header">
+                        <span class="inference-icon">⚠️</span>
+                        <span class="inference-title">Specialty Matching Gaps</span>
+                    </div>
+            `;
+            if (providersWithNoMatches.length > 0) {
+                html += `
+                    <p class="inference-desc">The following <strong>${providersWithNoMatches.length}</strong> provider${providersWithNoMatches.length > 1 ? 's have' : ' has'} <em>no matching production types</em> based on specialty.</p>
+                    <div class="inference-tags" style="margin-bottom: 12px;">
+                        ${providersWithNoMatches.map(name => `<span class="inference-tag">${name}</span>`).join('')}
+                    </div>
+                `;
+            }
+            if (ptsWithNoMatches.length > 0) {
+                html += `
+                    <p class="inference-desc">The following <strong>${ptsWithNoMatches.length}</strong> production type${ptsWithNoMatches.length > 1 ? 's have' : ' has'} <em>no compatible providers</em> based on specialty.</p>
+                    <div class="inference-tags">
+                        ${ptsWithNoMatches.map(name => `<span class="inference-tag">${name}</span>`).join('')}
+                    </div>
+                `;
+            }
+            html += `</div>`;
+        } else {
+            html += `
+                <div class="operatory-inference-panel ok" style="margin-top: 16px;">
+                    <div class="inference-header">
+                        <span class="inference-icon">✅</span>
+                        <span class="inference-title">All Specialties Connected</span>
+                    </div>
+                    <p class="inference-desc">Every selected provider has at least one compatible production type, and every selected production type has at least one compatible provider.</p>
+                </div>
+            `;
+        }
+
         els.matrixWrapper.innerHTML = html;
     }
 
@@ -760,6 +903,14 @@ document.addEventListener('DOMContentLoaded', () => {
             group.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
         });
 
+        // Collect selected IDs for highlighting and inference
+        const selectedPtIds = getSelectedProductionTypeIds();
+        const selectedProviderIds = getSelectedProviderIds();
+
+        // Track which selected items appear in at least one operatory (across all locations)
+        const ptIdsInOperatories = new Set();
+        const providerIdsInOperatories = new Set();
+
         let totalOps = 0;
         let html = '';
 
@@ -781,23 +932,34 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="operatory-grid">
                         ${locOps.length > 0 ? locOps.map(op => {
                             const providerIds = appData.operatory_providers && appData.operatory_providers[op.id] ? appData.operatory_providers[op.id] : [];
-                            const selectedProviderIds = getSelectedProviderIds();
+                            
+                            // Track which selected providers appear in operatories
+                            providerIds.forEach(pid => {
+                                if (selectedProviderIds.includes(pid)) {
+                                    providerIdsInOperatories.add(pid);
+                                }
+                            });
+
                             const providerTags = providerIds.map(pid => {
                                 // First try location-filtered providers, then fall back to the full name map
                                 const prov = appData.providers.find(p => p.id === pid);
                                 let name;
                                 let isActive = false;
+                                let concurrency = null;
                                 if (prov) {
                                     name = prov.name;
                                     isActive = prov.isActive;
+                                    concurrency = prov.concurrency;
                                 } else {
                                     const lookup = appData.allProviderNameMap && appData.allProviderNameMap[String(pid)];
                                     name = lookup ? lookup.name : `ID: ${pid}`;
                                     isActive = lookup ? lookup.isActive : false;
+                                    concurrency = lookup ? lookup.concurrency : null;
                                 }
                                 const isSelected = selectedProviderIds.includes(pid);
                                 const activeClass = isActive ? '' : ' inactive';
-                                return `<span class="op-provider-tag${isSelected ? ' selected' : ''}${activeClass}" title="${isSelected ? 'Selected provider' : (isActive ? 'Active (not selected)' : 'Inactive provider')}">${name}</span>`;
+                                const concurrencyLabel = concurrency != null ? ` (${concurrency})` : '';
+                                return `<span class="op-provider-tag${isSelected ? ' selected' : ''}${activeClass}" title="${isSelected ? 'Selected provider' : (isActive ? 'Active (not selected)' : 'Inactive provider')}${concurrency != null ? ' · Concurrency: ' + concurrency : ''}">${name}${concurrencyLabel}</span>`;
                             });
                             
                             const providersHtml = providerTags.length > 0
@@ -805,11 +967,21 @@ document.addEventListener('DOMContentLoaded', () => {
                                 : `<div class="op-providers op-providers-empty"><em>No providers assigned</em></div>`;
 
                             const ptIds = appData.operatory_production_types && appData.operatory_production_types[op.id] ? appData.operatory_production_types[op.id] : [];
+
+                            // Track which selected PTs appear in operatories
+                            ptIds.forEach(ptId => {
+                                if (selectedPtIds.includes(ptId)) {
+                                    ptIdsInOperatories.add(ptId);
+                                }
+                            });
+
                             const ptTags = ptIds.map(ptId => {
                                 const pt = appData.productionTypes.find(p => p.id === ptId);
-                                return pt ? pt.name : `ID: ${ptId}`;
-                            }).filter(name => name.toLowerCase() !== 'lunch').map(name => {
-                                return `<span class="op-pt-tag" title="Production Type">${name}</span>`;
+                                const ptName = pt ? pt.name : `ID: ${ptId}`;
+                                return { id: ptId, name: ptName };
+                            }).filter(item => item.name.toLowerCase() !== 'lunch').map(item => {
+                                const isSelected = selectedPtIds.includes(item.id);
+                                return `<span class="op-pt-tag${isSelected ? ' selected' : ''}" title="${isSelected ? 'Selected production type' : 'Production Type'}">${item.name}</span>`;
                             });
 
                             const ptsHtml = ptTags.length > 0
@@ -830,6 +1002,74 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         });
 
+        // --- Inference section: selected PTs not assigned to any operatory ---
+        const missingPts = selectedPtIds
+            .filter(ptId => !ptIdsInOperatories.has(ptId))
+            .map(ptId => {
+                const pt = appData.productionTypes.find(p => p.id === ptId);
+                return pt ? pt.name : `ID: ${ptId}`;
+            });
+
+        if (missingPts.length > 0) {
+            html += `
+                <div class="operatory-inference-panel">
+                    <div class="inference-header">
+                        <span class="inference-icon">⚠️</span>
+                        <span class="inference-title">Production Type Coverage Gap</span>
+                    </div>
+                    <p class="inference-desc">The following <strong>${missingPts.length}</strong> selected production type${missingPts.length > 1 ? 's are' : ' is'} <em>not assigned to any operatory</em> across the selected locations. This means no operatory is configured to handle these production types, which could lead to scheduling gaps.</p>
+                    <div class="inference-tags">
+                        ${missingPts.map(name => `<span class="inference-tag">${name}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        } else if (selectedPtIds.length > 0) {
+            html += `
+                <div class="operatory-inference-panel ok">
+                    <div class="inference-header">
+                        <span class="inference-icon">✅</span>
+                        <span class="inference-title">All Production Types Covered</span>
+                    </div>
+                    <p class="inference-desc">Every selected production type is assigned to at least one operatory across the selected locations.</p>
+                </div>
+            `;
+        }
+
+        // --- Inference section: selected Providers not assigned to any operatory ---
+        const missingProviders = selectedProviderIds
+            .filter(pid => !providerIdsInOperatories.has(pid))
+            .map(pid => {
+                const prov = appData.providers.find(p => p.id === pid);
+                if (prov) return prov.name;
+                const lookup = appData.allProviderNameMap && appData.allProviderNameMap[String(pid)];
+                return lookup ? lookup.name : `ID: ${pid}`;
+            });
+
+        if (missingProviders.length > 0) {
+            html += `
+                <div class="operatory-inference-panel">
+                    <div class="inference-header">
+                        <span class="inference-icon">⚠️</span>
+                        <span class="inference-title">Provider Coverage Gap</span>
+                    </div>
+                    <p class="inference-desc">The following <strong>${missingProviders.length}</strong> selected provider${missingProviders.length > 1 ? 's are' : ' is'} <em>not assigned to any operatory</em> across the selected locations. This means no operatory is configured to handle these providers, which could lead to scheduling gaps.</p>
+                    <div class="inference-tags">
+                        ${missingProviders.map(name => `<span class="inference-tag">${name}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        } else if (selectedProviderIds.length > 0) {
+            html += `
+                <div class="operatory-inference-panel ok">
+                    <div class="inference-header">
+                        <span class="inference-icon">✅</span>
+                        <span class="inference-title">All Providers Covered</span>
+                    </div>
+                    <p class="inference-desc">Every selected provider is assigned to at least one operatory across the selected locations.</p>
+                </div>
+            `;
+        }
+
         els.operatoriesContainer.innerHTML = html;
         els.operatoryBadge.textContent = `${totalOps} total`;
     }
@@ -840,8 +1080,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // ============================
 
     function renderDurationTable() {
-        const pts = appData.productionTypes.filter(pt => pt.isActive);
+        const pts = getSelectedProductionTypes();
         const slotMin = appData.slotDurationMinutes;
+        const calDurations = appData.calendarPtDurations || {};
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
         if (pts.length === 0) {
             els.durationContainer.innerHTML = `
@@ -858,48 +1100,133 @@ document.addEventListener('DOMContentLoaded', () => {
                     <tr>
                         <th>ID</th>
                         <th>Production Type</th>
-                        <th>Specialty Count</th>
-                        <th>Duration (min)</th>
-                        <th>Specialties</th>
-                        <th>Status</th>
+                        <th>Default Duration</th>
+                        <th>Calendar Durations</th>
+                        <th>Scheduled Days</th>
+                        <th>Templates</th>
+                        <th>Duration Validation</th>
                     </tr>
                 </thead>
                 <tbody>
         `;
 
         let validCount = 0;
-        let zeroCount = 0;
+        let mismatchCount = 0;
+        let noCalendarCount = 0;
 
         pts.forEach(pt => {
-            const duration = pt.durationMinutes || 0;
-            const specialtyCount = (pt.providerSpecialities || []).length;
-            const specs = (pt.providerSpecialities || []).join(', ') || '—';
+            const defaultDuration = pt.durationMinutes || 0;
+            const calData = calDurations[String(pt.id)];
+            const calDurs = calData ? calData.durations : [];
+            const calDays = calData ? calData.days.map(d => dayNames[d] || d) : [];
+            const calTemplates = calData ? calData.templates : [];
+            const calTimeRanges = calData ? calData.time_ranges : [];
 
-            let statusHtml;
-            if (duration > 0) {
-                statusHtml = '<span class="duration-status ok">✓ Configured</span>';
-                validCount++;
+            // Default duration display
+            const defaultDurHtml = defaultDuration > 0
+                ? `<span class="dur-badge dur-default">${defaultDuration} min</span>`
+                : '<span class="dur-badge dur-none">— Not set</span>';
+
+            // Calendar duration display
+            let calDurHtml;
+            if (calDurs.length > 0) {
+                calDurHtml = calDurs.map(d => `<span class="dur-badge dur-calendar">${d} min</span>`).join(' ');
             } else {
-                statusHtml = '<span class="duration-status zero">— No duration</span>';
-                zeroCount++;
+                calDurHtml = '<span class="dur-badge dur-none">— Not in calendar</span>';
+            }
+
+            // Scheduled days display
+            const daysHtml = calDays.length > 0
+                ? calDays.map(d => `<span class="day-badge">${d}</span>`).join(' ')
+                : '<span style="color: var(--text-muted);">—</span>';
+
+            // Templates display
+            const templatesHtml = calTemplates.length > 0
+                ? calTemplates.map(t => `<span class="template-badge" title="${t}">${t}</span>`).join(' ')
+                : '<span style="color: var(--text-muted);">—</span>';
+
+            // Duration validation
+            // Calendar durations can be valid multiples of the default duration
+            // e.g., default = 60 min → 60, 120, 180 are all valid (1×, 2×, 3×)
+            let validationHtml;
+            if (calDurs.length === 0) {
+                validationHtml = '<span class="duration-status zero">⚠ Not in calendar</span>';
+                noCalendarCount++;
+            } else if (defaultDuration === 0) {
+                validationHtml = '<span class="duration-status zero">⚠ No default set</span>';
+                noCalendarCount++;
+            } else {
+                const isMultiple = (d) => d > 0 && d % defaultDuration === 0;
+                const allMultiples = calDurs.every(isMultiple);
+                const someMultiples = calDurs.some(isMultiple);
+                const invalidDurs = calDurs.filter(d => !isMultiple(d));
+
+                if (allMultiples) {
+                    const multiples = calDurs.map(d => `${d / defaultDuration}×`).join(', ');
+                    validationHtml = `<span class="duration-status ok">✓ Valid multiples (${multiples})</span>`;
+                    validCount++;
+                } else if (someMultiples) {
+                    validationHtml = `<span class="duration-status warn">⚠ Mixed: ${invalidDurs.join(', ')} min not a multiple of ${defaultDuration}</span>`;
+                    mismatchCount++;
+                } else {
+                    validationHtml = `<span class="duration-status error">✗ Mismatch: ${calDurs.join(', ')} min — none are multiples of default ${defaultDuration} min</span>`;
+                    mismatchCount++;
+                }
+            }
+
+            // Build expandable time ranges row
+            let timeRangeDetail = '';
+            if (calTimeRanges.length > 0) {
+                const groupedByTemplate = {};
+                calTimeRanges.forEach(tr => {
+                    if (!groupedByTemplate[tr.template]) groupedByTemplate[tr.template] = [];
+                    groupedByTemplate[tr.template].push(tr);
+                });
+                timeRangeDetail = Object.entries(groupedByTemplate).map(([tmpl, ranges]) => {
+                    const rangeStrs = ranges.map(r => `${r.time} (${r.duration}min)`).join(', ');
+                    return `<div class="time-range-detail"><strong>${tmpl}:</strong> ${rangeStrs}</div>`;
+                }).join('');
             }
 
             html += `
-                <tr>
+                <tr class="${calTimeRanges.length > 0 ? 'expandable-row' : ''}" onclick="${calTimeRanges.length > 0 ? 'toggleTimeRanges(this)' : ''}">
                     <td>${pt.id}</td>
                     <td>${pt.name}</td>
-                    <td>${specialtyCount}</td>
-                    <td>${duration > 0 ? duration + ' min' : '—'}</td>
-                    <td>${specs}</td>
-                    <td>${statusHtml}</td>
+                    <td>${defaultDurHtml}</td>
+                    <td>${calDurHtml}</td>
+                    <td>${daysHtml}</td>
+                    <td class="template-cell">${templatesHtml}</td>
+                    <td>${validationHtml}</td>
                 </tr>
             `;
+
+            if (timeRangeDetail) {
+                html += `
+                    <tr class="time-range-row hidden">
+                        <td colspan="7">
+                            <div class="time-ranges-container">
+                                <div class="time-ranges-title">📅 Calendar Time Slots</div>
+                                ${timeRangeDetail}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
         });
 
         html += '</tbody></table>';
         els.durationContainer.innerHTML = html;
-        els.durationBadge.textContent = `${validCount} configured, ${zeroCount} missing`;
+        els.durationBadge.textContent = `${validCount} match, ${mismatchCount} mismatch, ${noCalendarCount} unconfigured`;
     }
+
+    // Toggle time range details
+    window.toggleTimeRanges = function(row) {
+        const nextRow = row.nextElementSibling;
+        if (nextRow && nextRow.classList.contains('time-range-row')) {
+            nextRow.classList.toggle('hidden');
+            row.classList.toggle('expanded');
+        }
+    };
 
 
     // ============================
@@ -908,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderValidationSummary() {
         const providers = getSelectedProviders();
-        const pts = appData.productionTypes.filter(pt => pt.isActive);
+        const pts = getSelectedProductionTypes();
         const ops = appData.operatories;
         const selectedLocs = getSelectedLocationIds();
 
@@ -943,10 +1270,62 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 3. Duration check
+        // 3. Duration check — compare default duration vs calendar durations
+        const calDurations = appData.calendarPtDurations || {};
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        
         pts.forEach(pt => {
-            if ((pt.durationMinutes || 0) === 0) {
-                ptInsights[pt.id].warnings.push(`No duration configured.`);
+            const defaultDuration = pt.durationMinutes || 0;
+            const calData = calDurations[String(pt.id)];
+            const calDurs = calData ? calData.durations : [];
+            const calDays = calData ? calData.days.map(d => dayNames[d] || d) : [];
+            const calTemplates = calData ? calData.templates : [];
+
+            // Check if default duration is set
+            if (defaultDuration === 0) {
+                ptInsights[pt.id].warnings.push(`No default duration configured (slotLength = 0).`);
+            }
+
+            // Calendar duration validation
+            if (calDurs.length === 0) {
+                ptInsights[pt.id].warnings.push(`Not found in any production calendar template slots.`);
+                pt._scheduledDays = 'None';
+                pt._scheduledTemplates = 'None';
+                pt._computedDurations = [defaultDuration];
+            } else {
+                // Show calendar schedule info
+                const dayStr = calDays.join(', ') || 'None';
+                const schedStr = calTemplates.join(', ');
+                ptInsights[pt.id].infos.push(`Scheduled on: ${dayStr} (Templates: ${schedStr})`);
+                pt._scheduledDays = dayStr;
+                pt._scheduledTemplates = schedStr;
+                pt._computedDurations = calDurs;
+
+                // Compare default vs calendar durations
+                // Calendar durations can be valid multiples of the default
+                if (defaultDuration > 0) {
+                    const isMultiple = (d) => d > 0 && d % defaultDuration === 0;
+                    const allMultiples = calDurs.every(isMultiple);
+                    const someMultiples = calDurs.some(isMultiple);
+                    const invalidDurs = calDurs.filter(d => !isMultiple(d));
+
+                    if (allMultiples) {
+                        const multiples = calDurs.map(d => `${d / defaultDuration}×`).join(', ');
+                        ptInsights[pt.id].infos.push(`Calendar durations are valid multiples of default ${defaultDuration} min (${multiples}). ✓`);
+                    } else if (someMultiples) {
+                        ptInsights[pt.id].warnings.push(
+                            `Calendar has mixed durations: ${invalidDurs.join(', ')} min are not multiples of default ${defaultDuration} min.`
+                        );
+                    } else {
+                        ptInsights[pt.id].errors.push(
+                            `Calendar duration mismatch: none of ${calDurs.join(', ')} min are multiples of default ${defaultDuration} min.`
+                        );
+                    }
+                } else {
+                    ptInsights[pt.id].infos.push(
+                        `Calendar durations: ${calDurs.join(', ')} min (no default to compare against).`
+                    );
+                }
             }
         });
 
@@ -962,63 +1341,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 5. Extract scheduled days from calendar templates
-        const ptSchedules = {}; // ptId -> set of { templateName, dayOfWeek }
-        const calTemplates = appData.raw_calendar_templates || [];
-        
-        calTemplates.forEach(t => {
-            const ptIdStr = t.productionTypeId;
-            let ptMap = {};
-            try {
-                if (typeof ptIdStr === 'string') ptMap = JSON.parse(ptIdStr);
-            } catch (e) {}
-            
-            const recurrences = t.templateRecurrence || [];
-            const days = recurrences.map(r => r.dayOfWeek);
-            const templateName = t.templateName || `Template #${t.templateId}`;
-            
-            Object.values(ptMap).forEach(ptList => {
-                (ptList || []).forEach(ptId => {
-                    if (!ptSchedules[ptId]) ptSchedules[ptId] = [];
-                    ptSchedules[ptId].push({
-                        templateName: templateName,
-                        days: days
-                    });
-                });
-            });
-        });
-
-        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-        pts.forEach(pt => {
-            const schedules = ptSchedules[pt.id] || [];
-            const ptDuration = pt.durationMinutes || 0;
-            
-            if (schedules.length > 0) {
-                const daySet = new Set();
-                const templateNames = new Set();
-                schedules.forEach(s => {
-                    templateNames.add(s.templateName);
-                    s.days.forEach(d => {
-                        if (d >= 0 && d <= 6) daySet.add(dayNames[d]);
-                    });
-                });
-                
-                const dayStr = Array.from(daySet).join(', ') || 'None';
-                const schedStr = Array.from(templateNames).join(', ');
-                ptInsights[pt.id].infos.push(`Scheduled on: ${dayStr} (Templates: ${schedStr})`);
-                
-                pt._scheduledDays = dayStr;
-                pt._scheduledTemplates = schedStr;
-            } else {
-                ptInsights[pt.id].warnings.push(`Not scheduled in any calendar templates.`);
-                pt._scheduledDays = 'None';
-                pt._scheduledTemplates = 'None';
-            }
-            pt._computedDurations = [ptDuration];
-        });
-
-        // 6. Provider concurrent appointments from availability templates
+        // 5. Provider concurrent appointments from availability templates
         const provTemplates = appData.raw_provider_availability_templates || [];
         const provConcurrent = {};
         provTemplates.forEach(t => {
@@ -1123,7 +1446,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedProviders = getSelectedProviders();
         // For export, map all matching PTs to each provider
         selectedProviders.forEach(prov => {
-            const matchingPTs = appData.productionTypes.filter(pt =>
+            const matchingPTs = getSelectedProductionTypes().filter(pt =>
                 (pt.providerSpecialities || []).includes(prov.specialityId)
             );
             if (matchingPTs.length > 0) {
@@ -1143,13 +1466,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...p,
                 concurrentFromTemplate: !!p._isConcurrent
             })),
-            full_production_types: appData.productionTypes.map(pt => ({
-                ...pt,
-                computedDurations: pt._computedDurations || [],
-                scheduledDays: pt._scheduledDays || 'None',
-                scheduledTemplates: pt._scheduledTemplates || 'None',
-                specialtyCount: (pt.providerSpecialities || []).length
-            })),
+            full_production_types: getSelectedProductionTypes().map(pt => {
+                const calData = appData.calendarPtDurations[String(pt.id)];
+                const calDayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+                return {
+                    ...pt,
+                    computedDurations: pt._computedDurations || [],
+                    scheduledDays: pt._scheduledDays || 'None',
+                    scheduledTemplates: pt._scheduledTemplates || 'None',
+                    specialtyCount: (pt.providerSpecialities || []).length,
+                    calendarDurations: calData ? calData.durations : [],
+                    calendarDays: calData ? calData.days.map(d => calDayNames[d] || d).join(', ') : 'None',
+                    calendarTemplates: calData ? calData.templates.join(', ') : 'None',
+                };
+            }),
         };
 
         try {

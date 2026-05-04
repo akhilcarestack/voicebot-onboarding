@@ -85,16 +85,11 @@
             <div class="stepper-line" id="stepperLine2"></div>
             <div class="stepper-step disabled" data-step="3" id="stepperStep3">
                 <div class="step-number">3</div>
-                <div class="step-label">Operatories</div>
+                <div class="step-label">Operatories & Matrix</div>
             </div>
             <div class="stepper-line" id="stepperLine3"></div>
             <div class="stepper-step disabled" data-step="4" id="stepperStep4">
                 <div class="step-number">4</div>
-                <div class="step-label">Specialty Matrix</div>
-            </div>
-            <div class="stepper-line" id="stepperLine4"></div>
-            <div class="stepper-step disabled" data-step="5" id="stepperStep5">
-                <div class="step-number">5</div>
                 <div class="step-label">Validation & Export</div>
             </div>
         </nav>
@@ -179,14 +174,37 @@
                 </div>
             </div>
 
+            <div class="glass-card" style="margin-top: 24px;">
+                <div class="card-title">
+                    <span class="icon">⚙️</span>
+                    Select Production Types
+                    <span class="badge badge-amber" id="productionTypeCountBadge"></span>
+                </div>
+                
+                <div style="margin-bottom: 12px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" id="selectAllProductionTypes" style="accent-color:var(--accent-teal);">
+                        <strong>Select All Production Types</strong>
+                    </label>
+                </div>
+                
+                <div class="location-grid" id="productionTypesGrid">
+                    <!-- PT checkboxes injected here -->
+                    <div class="empty-state">
+                        <div class="empty-icon">⚙️</div>
+                        <div class="empty-text">Production Types will appear after data is loaded</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="step-nav">
                 <button class="btn btn-secondary" onclick="goToStep(1)">← Back</button>
-                <button class="btn btn-primary" onclick="goToStep(3)">Next: Operatories →</button>
+                <button class="btn btn-primary" onclick="goToStep(3)">Next: Operatories & Matrix →</button>
             </div>
         </section>
 
         <!-- ==========================================
-             STEP 3: Operatories
+             STEP 3: Operatories & Matrix
              ========================================== -->
         <section class="step-panel" id="stepPanel3">
 
@@ -205,18 +223,7 @@
                 </div>
             </div>
 
-            <div class="step-nav">
-                <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
-                <button class="btn btn-primary" onclick="goToStep(4)">Next: Specialty Matrix →</button>
-            </div>
-        </section>
-
-        <!-- ==========================================
-             STEP 4: Provider × Production Type Matrix
-             ========================================== -->
-        <section class="step-panel" id="stepPanel4">
-
-            <div class="glass-card">
+            <div class="glass-card" style="margin-top: 24px;">
                 <div class="card-title">
                     <span class="icon">🧬</span>
                     Provider × Production Type — Specialty Match
@@ -260,15 +267,15 @@
             </div>
 
             <div class="step-nav">
-                <button class="btn btn-secondary" onclick="goToStep(3)">← Back</button>
-                <button class="btn btn-primary" onclick="goToStep(5)">Next: Validation →</button>
+                <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
+                <button class="btn btn-primary" onclick="goToStep(4)">Next: Validation & Export →</button>
             </div>
         </section>
 
         <!-- ==========================================
-             STEP 5: Duration Validation & Summary
+             STEP 4: Duration Validation & Summary
              ========================================== -->
-        <section class="step-panel" id="stepPanel5">
+        <section class="step-panel" id="stepPanel4">
 
             <!-- Duration Table -->
             <div class="glass-card">
@@ -329,7 +336,7 @@
             </div>
 
             <div class="step-nav">
-                <button class="btn btn-secondary" onclick="goToStep(4)">← Back</button>
+                <button class="btn btn-secondary" onclick="goToStep(3)">← Back</button>
                 <span style="color:var(--text-muted); font-size:12px;">End of validation flow</span>
             </div>
         </section>

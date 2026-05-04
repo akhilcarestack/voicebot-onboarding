@@ -357,6 +357,99 @@ def fetch_all_data(creds: FetchAllDataRequest):
         for op_id in operatory_production_types:
             operatory_production_types[op_id] = list(operatory_production_types[op_id])
 
+        # --- Fetch Production Calendar Timestamp Details ---
+        # Collect unique rowVersionStamps from templates filtered to selected locations
+        day_names_map = {0: "Sun", 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat"}
+        stamp_to_template_info = {}  # stamp -> { templateName, days }
+        for template in raw_templates:
+            if template.get("locationId") not in creds.selected_location_ids:
+                continue
+            stamp = template.get("rowVersionStamp")
+            if not stamp:
+                continue
+            recurrences = template.get("templateRecurrence", [])
+            days = [r.get("dayOfWeek") for r in recurrences if r.get("dayOfWeek") is not None]
+            stamp_to_template_info[stamp] = {
+                "templateName": template.get("templateName", f"Template #{template.get('templateId')}"),
+                "templateId": template.get("templateId"),
+                "days": days,
+            }
+
+        logger.info(f"Fetching timestamp details for {len(stamp_to_template_info)} unique templates in selected locations")
+
+        # Fetch timestamp detail for each unique stamp
+        def _fetch_timestamp_detail(stamp):
+            url = f"{scheduler_base}/production-calender/template/timestamp"
+            resp = requests.get(url, headers=headers, params={"timestamp": stamp}, timeout=15)
+            resp.raise_for_status()
+            return stamp, resp.json()
+
+        calendar_pt_durations = {}  # ptId -> { durations: set, templates: set, days: set, time_ranges: list }
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            timestamp_futures = {
+                executor.submit(_fetch_timestamp_detail, stamp): stamp
+                for stamp in stamp_to_template_info.keys()
+            }
+            for future in as_completed(timestamp_futures):
+                try:
+                    stamp, ts_data = future.result()
+                    template_info = stamp_to_template_info[stamp]
+                    template_name = template_info["templateName"]
+                    template_days = template_info["days"]
+
+                    if isinstance(ts_data, dict):
+                        for op_id, slot_ranges in ts_data.items():
+                            for slot_range in slot_ranges:
+                                if len(slot_range) < 3:
+                                    continue
+                                start_slot = slot_range[0]
+                                end_slot = slot_range[1]
+                                pt_id = slot_range[2]
+                                duration_mins = (end_slot - start_slot) * SLOT_DURATION_MINUTES
+
+                                start_h, start_m = divmod(start_slot * SLOT_DURATION_MINUTES, 60)
+                                end_h, end_m = divmod(end_slot * SLOT_DURATION_MINUTES, 60)
+                                time_range = f"{start_h:02d}:{start_m:02d}-{end_h:02d}:{end_m:02d}"
+
+                                if pt_id not in calendar_pt_durations:
+                                    calendar_pt_durations[pt_id] = {
+                                        "durations": set(),
+                                        "templates": set(),
+                                        "days": set(),
+                                        "time_ranges": [],
+                                    }
+                                calendar_pt_durations[pt_id]["durations"].add(duration_mins)
+                                calendar_pt_durations[pt_id]["templates"].add(template_name)
+                                for d in template_days:
+                                    calendar_pt_durations[pt_id]["days"].add(d)
+                                calendar_pt_durations[pt_id]["time_ranges"].append({
+                                    "time": time_range,
+                                    "duration": duration_mins,
+                                    "template": template_name,
+                                    "operatory": op_id,
+                                })
+                except Exception as e:
+                    logger.warning(f"Failed to fetch timestamp detail for stamp: {e}")
+
+        # Convert sets to lists for JSON serialization
+        for pt_id in calendar_pt_durations:
+            calendar_pt_durations[pt_id]["durations"] = sorted(calendar_pt_durations[pt_id]["durations"])
+            calendar_pt_durations[pt_id]["templates"] = sorted(calendar_pt_durations[pt_id]["templates"])
+            calendar_pt_durations[pt_id]["days"] = sorted(calendar_pt_durations[pt_id]["days"])
+            # Deduplicate time ranges
+            seen = set()
+            unique_ranges = []
+            for tr in calendar_pt_durations[pt_id]["time_ranges"]:
+                key = (tr["time"], tr["duration"], tr["template"])
+                if key not in seen:
+                    seen.add(key)
+                    unique_ranges.append(tr)
+            calendar_pt_durations[pt_id]["time_ranges"] = unique_ranges
+
+        # Convert ptId keys to strings for JSON serialization
+        calendar_pt_durations_str = {str(k): v for k, v in calendar_pt_durations.items()}
+        logger.info(f"Computed calendar durations for {len(calendar_pt_durations)} production types")
+
 
         # --- Build user concurrency map ---
         user_concurrency_map = {}
@@ -388,6 +481,7 @@ def fetch_all_data(creds: FetchAllDataRequest):
                     "name": f"{p.get('firstName', '')} {p.get('lastName', '')}".strip(),
                     "providerType": p.get("providerType", "Unknown"),
                     "isActive": p.get("isActive", False),
+                    "concurrency": user_concurrency_map.get(str(p_id), "N/A"),
                 }
         logger.info(f"Built all_provider_name_map with {len(all_provider_name_map)} providers (location-filtered: {len(providers)})")
 
@@ -479,6 +573,7 @@ def fetch_all_data(creds: FetchAllDataRequest):
             "slot_duration_minutes": SLOT_DURATION_MINUTES,
             "raw_calendar_templates": raw_templates,
             "raw_provider_availability_templates": raw_prov_avail_templates,
+            "calendar_pt_durations": calendar_pt_durations_str,
         }
 
     except requests.RequestException as e:
@@ -703,7 +798,10 @@ async def save_config_excel(config: SaveConfigRequest):
                         "Concurrent (Availability Template)": p_data.get('concurrentFromTemplate', False),
                         "Production Type ID": "N/A",
                         "Production Type Name": "N/A",
-                        "PT Schedule Durations": "N/A",
+                        "PT Default Duration": "N/A",
+                        "PT Calendar Durations": "N/A",
+                        "PT Calendar Days": "N/A",
+                        "PT Calendar Templates": "N/A",
                         "PT Scheduled Days": "N/A",
                         "PT Scheduled Templates": "N/A",
                         "PT Specialty Count": "N/A"
@@ -719,7 +817,10 @@ async def save_config_excel(config: SaveConfigRequest):
                             "Concurrent (Availability Template)": p_data.get('concurrentFromTemplate', False),
                             "Production Type ID": pt_id,
                             "Production Type Name": pt_data['name'] if pt_data else "Unknown",
-                            "PT Schedule Durations": ", ".join(map(str, pt_data.get('computedDurations', []))) if pt_data else "",
+                            "PT Default Duration": pt_data.get('durationMinutes', 0) if pt_data else 0,
+                            "PT Calendar Durations": ", ".join(map(str, pt_data.get('calendarDurations', []))) if pt_data else "",
+                            "PT Calendar Days": pt_data.get('calendarDays', 'None') if pt_data else "None",
+                            "PT Calendar Templates": pt_data.get('calendarTemplates', 'None') if pt_data else "None",
                             "PT Scheduled Days": pt_data.get('scheduledDays', 'None') if pt_data else "None",
                             "PT Scheduled Templates": pt_data.get('scheduledTemplates', 'None') if pt_data else "None",
                             "PT Specialty Count": pt_data.get('specialtyCount', 0) if pt_data else 0
