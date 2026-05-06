@@ -115,7 +115,8 @@
                     <div>
                         <label class="form-label" for="apiPassword">Password</label>
                         <input type="password" class="form-input" id="apiPassword"
-                               placeholder="Enter password">
+                               placeholder="Enter password"
+                               value="{{ carestack_password }}">
                     </div>
                 </div>
                 <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">
@@ -208,7 +209,7 @@
              ========================================== -->
         <section class="step-panel" id="stepPanel3">
 
-            <div class="glass-card">
+            <div class="glass-card" id="operatoriesCard">
                 <div class="card-title">
                     <span class="icon">🏥</span>
                     Operatories by Location
@@ -223,7 +224,7 @@
                 </div>
             </div>
 
-            <div class="glass-card" style="margin-top: 24px;">
+            <div class="glass-card" style="margin-top: 24px;" id="matrixCard">
                 <div class="card-title">
                     <span class="icon">🧬</span>
                     Provider × Production Type — Specialty Match
@@ -278,7 +279,7 @@
         <section class="step-panel" id="stepPanel4">
 
             <!-- Duration Table -->
-            <div class="glass-card">
+            <div class="glass-card" id="durationCard">
                 <div class="card-title">
                     <span class="icon">⏱️</span>
                     Production Type Duration
@@ -316,7 +317,7 @@
                     Enable Bot Functionalities for this Practice
                 </label>
                 <button class="btn btn-primary" id="btnExport">
-                    📥 Export to Excel
+                    📥 Export to PDF
                 </button>
             </div>
 
@@ -328,6 +329,7 @@
 
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="/static/js/app.js?v={{ v }}"></script>
 </body>
 </html>

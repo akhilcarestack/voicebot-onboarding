@@ -12,12 +12,19 @@ import time
 import logging
 from urllib.parse import urlparse
 import os
+import sys
 from dotenv import load_dotenv
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.abspath(relative_path)
+
 # Load environment variables from the app directory
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+load_dotenv(get_resource_path("app/.env"))
 
 # Setup Logging
 logging.basicConfig(
@@ -41,8 +48,8 @@ TOKEN_CACHE = {
 # Slot duration constant: 1 slot = 5 minutes
 SLOT_DURATION_MINUTES = 5
 
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+app.mount("/static", StaticFiles(directory=get_resource_path("app/static")), name="static")
+templates = Jinja2Templates(directory=get_resource_path("app/templates"))
 
 # --- Pydantic Models ---
 
@@ -76,11 +83,15 @@ class SaveConfigRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "v": int(time.time()),
-        "carestack_api_url": os.getenv("CARESTACK_API_URL", "")
-    })
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={
+            "v": int(time.time()),
+            "carestack_api_url": os.getenv("CARESTACK_API_URL", ""),
+            "carestack_password": os.getenv("CARESTACK_PASSWORD", "")
+        }
+    )
 
 
 # --- Auth ---
@@ -858,4 +869,12 @@ async def save_config_excel(config: SaveConfigRequest):
 
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
+    if getattr(sys, 'frozen', False):
+        # Running as compiled executable
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    else:
+        # Running from source
+        uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
