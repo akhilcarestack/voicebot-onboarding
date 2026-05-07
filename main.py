@@ -1,8 +1,9 @@
 from fastapi import FastAPI, Request, HTTPException, Response
-from fastapi.responses import HTMLResponse
+from .pdf_generator import generate_config_pdf
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import uvicorn
 import requests
@@ -77,6 +78,22 @@ class SaveConfigRequest(BaseModel):
     full_locations: List[Dict[str, Any]]
     full_providers: List[Dict[str, Any]]
     full_production_types: List[Dict[str, Any]]
+
+
+class PDFExportRequest(BaseModel):
+    notesText: str
+    excludedInsText: str
+    botEnabled: bool
+    selectedProviders: List[Dict[str, Any]]
+    selectedPTs: List[Dict[str, Any]]
+    allProductionTypes: List[Dict[str, Any]] = Field(default_factory=list)
+    selectedLocations: List[Dict[str, Any]] = Field(default_factory=list)
+    selectedLocNames: List[str]
+    calendarPtDurations: Dict[str, Any]
+    operatories: List[Dict[str, Any]]
+    operatory_providers: Dict[str, List[int]]
+    operatory_production_types: Dict[str, List[int]]
+    all_provider_name_map: Dict[str, Any]
 
 
 # --- Routes ---
@@ -866,6 +883,19 @@ async def save_config_excel(config: SaveConfigRequest):
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers=resp_headers
     )
+
+@app.post("/api/export-pdf")
+def export_pdf(data: PDFExportRequest):
+    try:
+        pdf_buffer = generate_config_pdf(data.dict())
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=voicebot_config.pdf"}
+        )
+    except Exception as e:
+        logger.exception("Failed to generate PDF")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

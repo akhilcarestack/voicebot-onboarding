@@ -1390,86 +1390,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
     els.btnExport.addEventListener('click', async () => {
         try {
-            showLoading('Generating PDF...');
-            
-            // Create a temporary container to hold the elements to be exported
-            const container = document.createElement('div');
-            container.className = 'app-container';
-            container.style.padding = '20px';
-            container.style.background = '#07070d'; // var(--bg-primary)
-            container.style.color = '#f0f0f5';      // var(--text-primary)
-            container.style.width = '1200px';
-            
-            // Clone the required cards
-            const durationCard = document.getElementById('durationCard').cloneNode(true);
-            const operatoriesCard = document.getElementById('operatoriesCard').cloneNode(true);
-            const matrixCard = document.getElementById('matrixCard').cloneNode(true);
-            
-            // Add a title
-            const title = document.createElement('h1');
-            title.textContent = 'VoiceBot PMS Configuration Validation';
-            title.style.textAlign = 'center';
-            title.style.marginBottom = '20px';
-            title.style.fontSize = '24px';
-            title.style.color = '#00d4aa'; // Teal color to avoid gradient issues in canvas
-            
-            // Append notes and configuration settings
-            const notesText = document.getElementById('additionalNotes').value;
-            const excludedInsText = document.getElementById('excludedInsurance').value;
-            const botEnabled = document.getElementById('botFunctionality').checked;
-            
-            const configInfo = document.createElement('div');
-            configInfo.style.marginBottom = '20px';
-            configInfo.style.padding = '15px';
-            configInfo.style.border = '1px solid rgba(255, 255, 255, 0.1)';
-            configInfo.style.borderRadius = '8px';
-            configInfo.style.fontSize = '14px';
-            configInfo.innerHTML = `
-                <strong>Bot Enabled:</strong> ${botEnabled ? 'Yes' : 'No'}<br>
-                <strong>Excluded Insurance:</strong> ${excludedInsText || 'None'}<br>
-                <strong>Notes:</strong> ${notesText || 'None'}
-            `;
+            showLoading('Generating PDF (Backend)...');
 
-            container.appendChild(title);
-            container.appendChild(configInfo);
-            container.appendChild(durationCard);
-            container.appendChild(operatoriesCard);
-            container.appendChild(matrixCard);
-            
-            // We need to append to body so styles are computed properly
-            container.style.position = 'absolute';
-            container.style.left = '0';
-            container.style.top = '0';
-            container.style.zIndex = '-9999';
-            document.body.appendChild(container);
-            
-            // Wait for DOM to layout the cloned elements properly before capturing
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            const opt = {
-                margin:       0.4,
-                filename:     'voicebot_config.pdf',
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { 
-                    scale: 2, 
-                    useCORS: true, 
-                    logging: true, 
-                    backgroundColor: '#07070d', 
-                    windowWidth: 1200,
-                    scrollY: 0,
-                    scrollX: 0
-                },
-                jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+            const data = {
+                notesText: document.getElementById('additionalNotes').value,
+                excludedInsText: document.getElementById('excludedInsurance').value,
+                botEnabled: document.getElementById('botFunctionality').checked,
+                selectedProviders: getSelectedProviders(),
+                selectedPTs: getSelectedProductionTypes(),
+                allProductionTypes: appData.productionTypes || [],
+                selectedLocations: getSelectedLocationIds().map(id => appData.locations.find(x => x.id === id)).filter(Boolean),
+                selectedLocNames: getSelectedLocationIds().map(id => {
+                    const l = appData.locations.find(x => x.id === id);
+                    return l ? l.name : `#${id}`;
+                }),
+                calendarPtDurations: appData.calendarPtDurations || {},
+                operatories: appData.operatories,
+                operatory_providers: appData.operatory_providers || {},
+                operatory_production_types: appData.operatory_production_types || {},
+                all_provider_name_map: appData.allProviderNameMap || {}
             };
-            
-            await html2pdf().set(opt).from(container).save();
-            
-            // Cleanup
-            document.body.removeChild(container);
-            
+
+            const resp = await fetch('/api/export-pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error(err.detail || 'Failed to generate PDF');
+            }
+
+            const blob = await resp.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'voicebot_config.pdf';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
         } catch (err) {
-            console.error(err);
-            alert('Error exporting PDF.');
+            console.error('PDF export error:', err);
+            alert('Error exporting PDF: ' + err.message);
         } finally {
             hideLoading();
         }
