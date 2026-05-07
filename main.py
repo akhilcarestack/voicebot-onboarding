@@ -369,6 +369,8 @@ def fetch_all_data(creds: FetchAllDataRequest):
         # --- Build Operatory -> Production Types map ---
         operatory_production_types = {}
         for template in raw_templates:
+            if template.get("locationId") not in creds.selected_location_ids:
+                continue
             pt_id_str = template.get("productionTypeId")
             if pt_id_str and isinstance(pt_id_str, str):
                 try:
@@ -386,37 +388,62 @@ def fetch_all_data(creds: FetchAllDataRequest):
             operatory_production_types[op_id] = list(operatory_production_types[op_id])
 
         # --- Fetch Production Calendar Timestamp Details ---
-        # Collect unique rowVersionStamps from templates filtered to selected locations
+        # Collect every unique rowVersionStamp from templates in the selected locations.
+        # The production-calendar UI exposes more than one or two templates per day;
+        # validation should include all available day/template configurations.
         day_names_map = {0: "Sun", 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat"}
-        stamp_to_template_info = {}  # stamp -> { templateName, days }
-        day_template_counts = {i: 0 for i in range(7)}  # track number of templates per day (limit 2)
-        
+        stamp_to_template_info = {}
+
         for template in raw_templates:
             if template.get("locationId") not in creds.selected_location_ids:
                 continue
             stamp = template.get("rowVersionStamp")
-            if not stamp or stamp in stamp_to_template_info:
+            if not stamp:
                 continue
-            
-            recurrences = template.get("templateRecurrence", [])
-            unique_days = {r.get("dayOfWeek") for r in recurrences if r.get("dayOfWeek") is not None}
-            
-            valid_days = []
-            for day in unique_days:
-                if day_template_counts.get(day, 0) < 2:
-                    valid_days.append(day)
-                    day_template_counts[day] += 1
-            
-            if not valid_days:
-                continue  # Skip template if all its recurrences exceed the 2-per-day limit
-            
-            stamp_to_template_info[stamp] = {
-                "templateName": template.get("templateName", f"Template #{template.get('templateId')}"),
-                "templateId": template.get("templateId"),
-                "days": valid_days,
+
+            recurrences = template.get("templateRecurrence") or []
+            days = {
+                r.get("dayOfWeek")
+                for r in recurrences
+                if isinstance(r, dict) and r.get("dayOfWeek") is not None
+            }
+            dates = {
+                r.get("date")
+                for r in recurrences
+                if isinstance(r, dict) and r.get("date")
             }
 
-        logger.info(f"Fetching timestamp details for {len(stamp_to_template_info)} unique templates in selected locations")
+            info = stamp_to_template_info.setdefault(stamp, {
+                "templateNames": set(),
+                "templateIds": set(),
+                "days": set(),
+                "dates": set(),
+                "locationIds": set(),
+            })
+            info["templateNames"].add(
+                template.get("templateName") or f"Template #{template.get('templateId')}"
+            )
+            if template.get("templateId") is not None:
+                info["templateIds"].add(template.get("templateId"))
+            if template.get("locationId") is not None:
+                info["locationIds"].add(template.get("locationId"))
+            info["days"].update(days)
+            info["dates"].update(dates)
+
+        templates_by_day = {day: 0 for day in day_names_map}
+        for info in stamp_to_template_info.values():
+            for day in info["days"]:
+                if day in templates_by_day:
+                    templates_by_day[day] += 1
+        day_summary = ", ".join(
+            f"{day_names_map[day]}={count}"
+            for day, count in templates_by_day.items()
+            if count
+        ) or "no recurrence days"
+        logger.info(
+            f"Fetching timestamp details for {len(stamp_to_template_info)} unique "
+            f"production calendar templates in selected locations ({day_summary})"
+        )
 
         # Fetch timestamp detail for each unique stamp
         def _fetch_timestamp_detail(stamp):
@@ -435,11 +462,16 @@ def fetch_all_data(creds: FetchAllDataRequest):
                 try:
                     stamp, ts_data = future.result()
                     template_info = stamp_to_template_info[stamp]
-                    template_name = template_info["templateName"]
-                    template_days = template_info["days"]
+                    template_names = sorted(template_info["templateNames"])
+                    template_label = ", ".join(template_names) if template_names else f"Template {stamp}"
+                    template_days = sorted(template_info["days"])
+                    template_dates = sorted(template_info["dates"])
+                    template_locations = sorted(template_info["locationIds"])
 
                     if isinstance(ts_data, dict):
                         for op_id, slot_ranges in ts_data.items():
+                            if not isinstance(slot_ranges, list):
+                                continue
                             for slot_range in slot_ranges:
                                 if len(slot_range) < 3:
                                     continue
@@ -460,14 +492,17 @@ def fetch_all_data(creds: FetchAllDataRequest):
                                         "time_ranges": [],
                                     }
                                 calendar_pt_durations[pt_id]["durations"].add(duration_mins)
-                                calendar_pt_durations[pt_id]["templates"].add(template_name)
+                                calendar_pt_durations[pt_id]["templates"].update(template_names)
                                 for d in template_days:
                                     calendar_pt_durations[pt_id]["days"].add(d)
                                 calendar_pt_durations[pt_id]["time_ranges"].append({
                                     "time": time_range,
                                     "duration": duration_mins,
-                                    "template": template_name,
+                                    "template": template_label,
                                     "operatory": op_id,
+                                    "days": template_days,
+                                    "dates": template_dates,
+                                    "locationIds": template_locations,
                                 })
                 except Exception as e:
                     logger.warning(f"Failed to fetch timestamp detail for stamp: {e}")
@@ -481,7 +516,15 @@ def fetch_all_data(creds: FetchAllDataRequest):
             seen = set()
             unique_ranges = []
             for tr in calendar_pt_durations[pt_id]["time_ranges"]:
-                key = (tr["time"], tr["duration"], tr["template"])
+                key = (
+                    tr["time"],
+                    tr["duration"],
+                    tr["template"],
+                    tr["operatory"],
+                    tuple(tr.get("days", [])),
+                    tuple(tr.get("dates", [])),
+                    tuple(tr.get("locationIds", [])),
+                )
                 if key not in seen:
                     seen.add(key)
                     unique_ranges.append(tr)

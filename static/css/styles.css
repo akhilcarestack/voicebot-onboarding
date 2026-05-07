@@ -1124,6 +1124,11 @@ body {
     margin-right: 6px;
 }
 
+.time-range-meta {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
 /* ============================================
    VALIDATION SUMMARY
    ============================================ */

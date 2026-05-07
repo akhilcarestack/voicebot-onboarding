@@ -1187,13 +1187,30 @@ document.addEventListener('DOMContentLoaded', () => {
             // Build expandable time ranges row
             let timeRangeDetail = '';
             if (calTimeRanges.length > 0) {
+                const formatDateOnly = (dateValue) => {
+                    if (typeof dateValue !== 'string') return dateValue;
+                    return dateValue.slice(0, 10);
+                };
+                const formatTimeRangeMeta = (range) => {
+                    const parts = [];
+                    if (range.operatory) parts.push(`Op ${range.operatory}`);
+                    if (Array.isArray(range.days) && range.days.length > 0) {
+                        parts.push(range.days.map(d => dayNames[d] || d).join('/'));
+                    }
+                    if (Array.isArray(range.dates) && range.dates.length > 0) {
+                        parts.push(range.dates.map(formatDateOnly).join(', '));
+                    }
+                    return parts.length > 0
+                        ? ` <span class="time-range-meta">(${parts.join(' | ')})</span>`
+                        : '';
+                };
                 const groupedByTemplate = {};
                 calTimeRanges.forEach(tr => {
                     if (!groupedByTemplate[tr.template]) groupedByTemplate[tr.template] = [];
                     groupedByTemplate[tr.template].push(tr);
                 });
                 timeRangeDetail = Object.entries(groupedByTemplate).map(([tmpl, ranges]) => {
-                    const rangeStrs = ranges.map(r => `${r.time} (${r.duration}min)`).join(', ');
+                    const rangeStrs = ranges.map(r => `${r.time} (${r.duration}min)${formatTimeRangeMeta(r)}`).join(', ');
                     return `<div class="time-range-detail"><strong>${tmpl}:</strong> ${rangeStrs}</div>`;
                 }).join('');
             }

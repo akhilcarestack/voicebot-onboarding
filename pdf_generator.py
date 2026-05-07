@@ -160,6 +160,8 @@ def generate_config_pdf(data: dict) -> BytesIO:
     pt_lookup = {_id_key(pt.get('id')): pt for pt in all_pts}
     for pt in pts:
         pt_lookup[_id_key(pt.get('id'))] = pt
+    ops = data.get('operatories', []) or []
+    op_lookup = {_id_key(op.get('id')): op for op in ops}
 
     def provider_label(pid):
         p_info = _get_by_id(provider_lookup, pid)
@@ -182,6 +184,13 @@ def generate_config_pdf(data: dict) -> BytesIO:
         if loc_name:
             return loc_name
         return f"Location #{lid}"
+
+    def operatory_label(opid):
+        op_obj = _get_by_id(op_lookup, opid)
+        if not op_obj:
+            return f"Op #{opid}"
+        op_name = op_obj.get('name') or f"Op #{opid}"
+        return f"{op_name} (#{opid})"
 
     elements.append(Paragraph(f"Selected Providers ({len(providers)})", section_header_style))
     if providers:
@@ -364,9 +373,89 @@ def generate_config_pdf(data: dict) -> BytesIO:
                 duration_inference_table.setStyle(TableStyle([('TEXTCOLOR', (1, row_idx), (1, row_idx), AMBER)]))
         elements.append(duration_inference_table)
 
+        def format_days(days):
+            labels = []
+            for day in days or []:
+                if isinstance(day, int) and 0 <= day < len(day_names):
+                    labels.append(day_names[day])
+                    continue
+                try:
+                    day_idx = int(day)
+                except (TypeError, ValueError):
+                    labels.append(str(day))
+                    continue
+                labels.append(day_names[day_idx] if 0 <= day_idx < len(day_names) else str(day))
+            return _name_list(labels)
+
+        def format_dates(dates):
+            return _name_list([str(date_value)[:10] for date_value in (dates or [])])
+
+        def format_range_when(slot_range):
+            days_str = format_days(slot_range.get('days'))
+            dates_str = format_dates(slot_range.get('dates'))
+            if days_str != "--" and dates_str != "--":
+                return f"{days_str}; {dates_str}"
+            if days_str != "--":
+                return days_str
+            return dates_str
+
+        def format_range_locations(slot_range):
+            loc_ids = slot_range.get('locationIds') or []
+            if not loc_ids:
+                op_obj = _get_by_id(op_lookup, slot_range.get('operatory'))
+                if op_obj and op_obj.get('locationId') is not None:
+                    loc_ids = [op_obj.get('locationId')]
+            return _name_list([location_label(lid) for lid in loc_ids])
+
+        slot_rows = [['Production Type', 'Template', 'Day / Date', 'Location', 'Operatory', 'Time', 'Duration']]
+        for pt in pts:
+            pt_id = str(pt.get('id'))
+            pt_name = pt.get('name') or f"Production Type #{pt_id}"
+            cd = cal_durs.get(pt_id, {}) or {}
+            for slot_range in cd.get('time_ranges', []) or []:
+                duration = slot_range.get('duration')
+                duration_str = f"{duration} min" if duration is not None else "--"
+                slot_rows.append([
+                    Paragraph(escape(pt_name), small_style),
+                    Paragraph(escape(str(slot_range.get('template') or '--')), small_style),
+                    Paragraph(escape(format_range_when(slot_range)), small_style),
+                    Paragraph(escape(format_range_locations(slot_range)), small_style),
+                    Paragraph(escape(operatory_label(slot_range.get('operatory'))), small_style),
+                    slot_range.get('time') or '--',
+                    duration_str,
+                ])
+
+        if len(slot_rows) > 1:
+            slot_rows[1:] = sorted(
+                slot_rows[1:],
+                key=lambda row: (
+                    getattr(row[0], 'text', ''),
+                    getattr(row[1], 'text', ''),
+                    getattr(row[2], 'text', ''),
+                    getattr(row[4], 'text', ''),
+                    str(row[5]),
+                )
+            )
+            elements.append(Paragraph("Production Calendar Slot Configurations", section_header_style))
+            slot_table = Table(
+                slot_rows,
+                colWidths=[38*mm, 48*mm, 32*mm, 36*mm, 42*mm, 27*mm, 22*mm],
+                repeatRows=1
+            )
+            slot_table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), HEADER_BG),
+                ('TEXTCOLOR', (0,0), (-1,0), TEAL),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('BACKGROUND', (0,1), (-1,-1), CARD_BG),
+                ('TEXTCOLOR', (0,1), (-1,-1), TEXT_COLOR),
+                ('GRID', (0,0), (-1,-1), 0.5, BORDER_COLOR),
+                ('FONTSIZE', (0,0), (-1,-1), 7.8),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ]))
+            elements.append(slot_table)
+
     # 5. Operatories
     elements.append(Paragraph("Operatories by Location", section_header_style))
-    ops = data.get('operatories', [])
     op_provs = data.get('operatory_providers', {})
     op_pts = data.get('operatory_production_types', {})
     
