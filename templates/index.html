@@ -240,6 +240,11 @@
                     <select class="form-input filter-select" id="matrixProviderSelect">
                         <option value="all">All Providers</option>
                     </select>
+                    <div class="match-mode hidden" id="matrixMatchMode" role="group" aria-label="Production type match filter">
+                        <button type="button" class="match-mode-btn active" data-match-mode="all" aria-pressed="true">All</button>
+                        <button type="button" class="match-mode-btn" data-match-mode="match" aria-pressed="false">Compatible</button>
+                        <button type="button" class="match-mode-btn" data-match-mode="mismatch" aria-pressed="false">Non-compatible</button>
+                    </div>
                     <span class="filter-hint" id="filterHint"></span>
                 </div>
 
@@ -263,6 +268,27 @@
                     <div class="legend-item">
                         <div class="legend-dot mismatch"></div>
                         <span>Specialty Mismatch</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card" style="margin-top: 24px;" id="schedulingCoverageCard">
+                <div class="card-title">
+                    <span class="icon">✅</span>
+                    Scheduling Coverage Validation
+                    <span class="badge badge-teal" id="schedulingCoverageBadge"></span>
+                </div>
+
+                <div class="coverage-filter" id="schedulingCoverageFilter" role="group" aria-label="Scheduling coverage filter">
+                    <button type="button" class="coverage-mode-btn active" data-coverage-mode="needs" aria-pressed="true">Needs Attention</button>
+                    <button type="button" class="coverage-mode-btn" data-coverage-mode="covered" aria-pressed="false">Covered</button>
+                    <button type="button" class="coverage-mode-btn" data-coverage-mode="all" aria-pressed="false">All Combos</button>
+                </div>
+
+                <div id="schedulingCoverageContainer">
+                    <div class="empty-state">
+                        <div class="empty-icon">✅</div>
+                        <div class="empty-text">Scheduling coverage will appear after providers and production types are selected</div>
                     </div>
                 </div>
             </div>

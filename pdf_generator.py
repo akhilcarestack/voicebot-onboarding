@@ -102,16 +102,53 @@ def generate_config_pdf(data: dict) -> BytesIO:
         'BodyText',
         fontSize=10.5,
         textColor=TEXT_COLOR,
-        leading=14
+        leading=14,
+        wordWrap='CJK'
     )
     small_style = ParagraphStyle(
         'SmallText',
         parent=body_style,
         fontSize=9,
-        leading=11
+        leading=11,
+        wordWrap='CJK'
+    )
+    table_cell_style = ParagraphStyle(
+        'TableCell',
+        parent=small_style,
+        fontSize=8.2,
+        leading=9.5,
+        wordWrap='CJK'
+    )
+    table_header_style = ParagraphStyle(
+        'TableHeader',
+        parent=table_cell_style,
+        fontName='Helvetica-Bold',
+        fontSize=8,
+        leading=9,
+        textColor=TEAL,
+        wordWrap='CJK'
+    )
+    tiny_cell_style = ParagraphStyle(
+        'TinyTableCell',
+        parent=table_cell_style,
+        fontSize=7.2,
+        leading=8.2,
+        wordWrap='CJK'
     )
 
     elements = []
+    table_width = min(doc.width, 260*mm)
+
+    def cell(value, style=table_cell_style, empty="--"):
+        if isinstance(value, Paragraph):
+            return value
+        if value is None or value == "":
+            value = empty
+        return Paragraph(escape(str(value)), style)
+
+    def header_cell(value):
+        return cell(value, table_header_style)
+
     selected_locations = data.get('selectedLocations', []) or []
     loc_lookup = {
         _id_key(loc.get('id')): loc.get('name') or f"Location #{loc.get('id')}"
@@ -138,7 +175,7 @@ def generate_config_pdf(data: dict) -> BytesIO:
         [Paragraph(f"<b>Excluded Insurance:</b> {escape(data.get('excludedInsText') or 'None')}", body_style),
          Paragraph(f"<b>Notes:</b> {escape(data.get('notesText') or 'None')}", body_style)]
     ]
-    config_table = Table(config_data, colWidths=[130*mm, 130*mm])
+    config_table = Table(config_data, colWidths=[table_width / 2, table_width / 2])
     config_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,-1), CARD_BG),
         ('BOX', (0,0), (-1,-1), 0.5, BORDER_COLOR),
@@ -194,9 +231,18 @@ def generate_config_pdf(data: dict) -> BytesIO:
 
     elements.append(Paragraph(f"Selected Providers ({len(providers)})", section_header_style))
     if providers:
-        p_head = ['ID', 'Name', 'Type', 'Specialty', 'Concurrency']
-        p_body = [[p.get('id'), p.get('name'), p.get('providerType'), f"Spec #{p.get('specialityId') or '--'}", p.get('concurrency') or 'N/A'] for p in providers]
-        p_table = Table([p_head] + p_body, colWidths=[20*mm, 80*mm, 60*mm, 60*mm, 40*mm])
+        p_head = [header_cell(x) for x in ['ID', 'Name', 'Type', 'Specialty', 'Concurrency']]
+        p_body = [
+            [
+                cell(p.get('id')),
+                cell(p.get('name')),
+                cell(p.get('providerType')),
+                cell(f"Spec #{p.get('specialityId') or '--'}"),
+                cell(p.get('concurrency') or 'N/A')
+            ]
+            for p in providers
+        ]
+        p_table = Table([p_head] + p_body, colWidths=[20*mm, 76*mm, 58*mm, 58*mm, table_width - 212*mm], repeatRows=1)
         p_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), HEADER_BG),
             ('TEXTCOLOR', (0,0), (-1,0), TEAL),
@@ -214,7 +260,7 @@ def generate_config_pdf(data: dict) -> BytesIO:
     day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     elements.append(Paragraph(f"Production Type Duration ({len(pts)})", section_header_style))
     if pts:
-        d_head = ['ID', 'Production Type', 'Default', 'Calendar', 'Days', 'Templates', 'Validation']
+        d_head = [header_cell(x) for x in ['ID', 'Production Type', 'Default', 'Calendar', 'Days', 'Templates', 'Validation']]
         d_body = []
         duration_findings = {
             'valid': [],
@@ -273,16 +319,16 @@ def generate_config_pdf(data: dict) -> BytesIO:
                 val_lines.append("Specialty ok: 1 mapped")
             
             d_body.append([
-                pt_id,
-                Paragraph(escape(pt_name), body_style),
-                def_str,
-                Paragraph(escape(cal_str), small_style),
-                Paragraph(escape(days_str), small_style),
-                Paragraph(escape(tmpls_str), small_style),
-                Paragraph(escape("; ".join(val_lines)), small_style)
+                cell(pt_id),
+                cell(pt_name),
+                cell(def_str),
+                cell(cal_str, tiny_cell_style),
+                cell(days_str, tiny_cell_style),
+                cell(tmpls_str, tiny_cell_style),
+                cell("; ".join(val_lines), tiny_cell_style)
             ])
 
-        d_table = Table([d_head] + d_body, colWidths=[15*mm, 50*mm, 20*mm, 45*mm, 40*mm, 50*mm, 40*mm])
+        d_table = Table([d_head] + d_body, colWidths=[15*mm, 48*mm, 20*mm, 42*mm, 35*mm, 45*mm, table_width - 205*mm], repeatRows=1)
         d_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), HEADER_BG),
             ('TEXTCOLOR', (0,0), (-1,0), TEAL),
@@ -296,15 +342,15 @@ def generate_config_pdf(data: dict) -> BytesIO:
         elements.append(d_table)
 
         elements.append(Paragraph("Production Type Duration Inference", section_header_style))
-        inference_rows = [['Inference', 'Severity', 'Affected Production Types', 'What it means']]
+        inference_rows = [[header_cell('Inference'), header_cell('Severity'), header_cell('Affected Production Types'), header_cell('What it means')]]
 
         def add_duration_finding(title, severity, affected, meaning):
             if affected:
                 inference_rows.append([
-                    title,
+                    cell(title),
                     severity,
-                    Paragraph(escape(_name_list(affected)), small_style),
-                    Paragraph(escape(meaning), small_style),
+                    cell(_name_list(affected), tiny_cell_style),
+                    cell(meaning, tiny_cell_style),
                 ])
 
         add_duration_finding(
@@ -346,13 +392,13 @@ def generate_config_pdf(data: dict) -> BytesIO:
 
         if len(inference_rows) == 1:
             inference_rows.append([
-                'Duration and specialty checks',
+                cell('Duration and specialty checks'),
                 'Clear',
-                Paragraph(escape(_name_list(duration_findings['valid'])), small_style),
-                Paragraph('Every selected production type with calendar data has valid duration multiples and exactly one specialty.', small_style)
+                cell(_name_list(duration_findings['valid']), tiny_cell_style),
+                cell('Every selected production type with calendar data has valid duration multiples and exactly one specialty.', tiny_cell_style)
             ])
 
-        duration_inference_table = Table(inference_rows, colWidths=[45*mm, 25*mm, 95*mm, 95*mm])
+        duration_inference_table = Table(inference_rows, colWidths=[45*mm, 25*mm, 92*mm, table_width - 162*mm], repeatRows=1)
         duration_inference_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), HEADER_BG),
             ('TEXTCOLOR', (0,0), (-1,0), TEAL),
@@ -407,7 +453,7 @@ def generate_config_pdf(data: dict) -> BytesIO:
                     loc_ids = [op_obj.get('locationId')]
             return _name_list([location_label(lid) for lid in loc_ids])
 
-        slot_rows = [['Production Type', 'Template', 'Day / Date', 'Location', 'Operatory', 'Time', 'Duration']]
+        slot_rows = [[header_cell(x) for x in ['Production Type', 'Template', 'Day / Date', 'Location', 'Operatory', 'Time', 'Duration']]]
         for pt in pts:
             pt_id = str(pt.get('id'))
             pt_name = pt.get('name') or f"Production Type #{pt_id}"
@@ -416,13 +462,13 @@ def generate_config_pdf(data: dict) -> BytesIO:
                 duration = slot_range.get('duration')
                 duration_str = f"{duration} min" if duration is not None else "--"
                 slot_rows.append([
-                    Paragraph(escape(pt_name), small_style),
-                    Paragraph(escape(str(slot_range.get('template') or '--')), small_style),
-                    Paragraph(escape(format_range_when(slot_range)), small_style),
-                    Paragraph(escape(format_range_locations(slot_range)), small_style),
-                    Paragraph(escape(operatory_label(slot_range.get('operatory'))), small_style),
-                    slot_range.get('time') or '--',
-                    duration_str,
+                    cell(pt_name, tiny_cell_style),
+                    cell(str(slot_range.get('template') or '--'), tiny_cell_style),
+                    cell(format_range_when(slot_range), tiny_cell_style),
+                    cell(format_range_locations(slot_range), tiny_cell_style),
+                    cell(operatory_label(slot_range.get('operatory')), tiny_cell_style),
+                    cell(slot_range.get('time') or '--', tiny_cell_style),
+                    cell(duration_str, tiny_cell_style),
                 ])
 
         if len(slot_rows) > 1:
@@ -433,13 +479,13 @@ def generate_config_pdf(data: dict) -> BytesIO:
                     getattr(row[1], 'text', ''),
                     getattr(row[2], 'text', ''),
                     getattr(row[4], 'text', ''),
-                    str(row[5]),
+                    getattr(row[5], 'text', str(row[5])),
                 )
             )
             elements.append(Paragraph("Production Calendar Slot Configurations", section_header_style))
             slot_table = Table(
                 slot_rows,
-                colWidths=[38*mm, 48*mm, 32*mm, 36*mm, 42*mm, 27*mm, 22*mm],
+                colWidths=[38*mm, 46*mm, 32*mm, 36*mm, 42*mm, 24*mm, table_width - 218*mm],
                 repeatRows=1
             )
             slot_table.setStyle(TableStyle([
@@ -468,7 +514,7 @@ def generate_config_pdf(data: dict) -> BytesIO:
     for lid, loc_ops in loc_groups.items():
         loc_name = location_label(lid)
         elements.append(Paragraph(f"<b>{escape(loc_name)}</b> ({len(loc_ops)} operatories)", body_style))
-        o_head = ['Operatory', 'ID', 'Providers', 'Production Types']
+        o_head = [header_cell(x) for x in ['Operatory', 'ID', 'Providers', 'Production Types']]
         o_body = []
         for op in sorted(loc_ops, key=lambda x: x.get('sortOrder', 0)):
             op_id = str(op.get('id'))
@@ -480,13 +526,13 @@ def generate_config_pdf(data: dict) -> BytesIO:
             pt_names = [n for n in pt_names if n.lower() != 'lunch']
 
             o_body.append([
-                op.get('name'),
-                op_id,
-                Paragraph(escape(_name_list(p_names)), small_style),
-                Paragraph(escape(_name_list(pt_names)), small_style)
+                cell(op.get('name')),
+                cell(op_id),
+                cell(_limited_name_list(p_names, limit=18), tiny_cell_style),
+                cell(_limited_name_list(pt_names, limit=18), tiny_cell_style)
             ])
         
-        o_table = Table([o_head] + o_body, colWidths=[40*mm, 20*mm, 100*mm, 100*mm])
+        o_table = Table([o_head] + o_body, colWidths=[40*mm, 20*mm, 96*mm, table_width - 156*mm], repeatRows=1)
         o_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), HEADER_BG),
             ('TEXTCOLOR', (0,0), (-1,0), TEAL),
@@ -519,56 +565,50 @@ def generate_config_pdf(data: dict) -> BytesIO:
     missing_provider_ids = sorted(selected_provider_ids - provider_ids_in_operatories)
     missing_pt_ids = sorted(selected_pt_ids - pt_ids_in_operatories)
 
-    inference_rows = [['Check', 'Result', 'Details']]
+    inference_rows = [[header_cell('Check'), header_cell('Result'), header_cell('Details')]]
     if selected_pt_ids:
         if missing_pt_ids:
             missing_names = [production_type_label(ptid) for ptid in missing_pt_ids]
             inference_rows.append([
-                'Production Types',
+                cell('Production Types'),
                 'Coverage gap',
-                Paragraph(
-                    escape(f"{len(missing_names)} selected production type(s) are not assigned to any operatory: {_name_list(missing_names)}"),
-                    body_style
-                )
+                cell(f"{len(missing_names)} selected production type(s) are not assigned to any operatory: {_name_list(missing_names)}")
             ])
         else:
             inference_rows.append([
-                'Production Types',
+                cell('Production Types'),
                 'Covered',
-                Paragraph('Every selected production type is assigned to at least one operatory.', body_style)
+                cell('Every selected production type is assigned to at least one operatory.')
             ])
     else:
         inference_rows.append([
-            'Production Types',
+            cell('Production Types'),
             'No selection',
-            Paragraph('No production types were selected for validation.', body_style)
+            cell('No production types were selected for validation.')
         ])
 
     if selected_provider_ids:
         if missing_provider_ids:
             missing_names = [provider_label(pid) for pid in missing_provider_ids]
             inference_rows.append([
-                'Providers',
+                cell('Providers'),
                 'Coverage gap',
-                Paragraph(
-                    escape(f"{len(missing_names)} selected provider(s) are not assigned to any operatory: {_name_list(missing_names)}"),
-                    body_style
-                )
+                cell(f"{len(missing_names)} selected provider(s) are not assigned to any operatory: {_name_list(missing_names)}")
             ])
         else:
             inference_rows.append([
-                'Providers',
+                cell('Providers'),
                 'Covered',
-                Paragraph('Every selected provider is assigned to at least one operatory.', body_style)
+                cell('Every selected provider is assigned to at least one operatory.')
             ])
     else:
         inference_rows.append([
-            'Providers',
+            cell('Providers'),
             'No selection',
-            Paragraph('No providers were selected for validation.', body_style)
+            cell('No providers were selected for validation.')
         ])
 
-    inference_table = Table(inference_rows, colWidths=[45*mm, 35*mm, 180*mm])
+    inference_table = Table(inference_rows, colWidths=[45*mm, 35*mm, table_width - 80*mm], repeatRows=1)
     inference_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), HEADER_BG),
         ('TEXTCOLOR', (0,0), (-1,0), TEAL),
@@ -590,8 +630,11 @@ def generate_config_pdf(data: dict) -> BytesIO:
     # 7. Specialty Matrix
     if providers and pts:
         elements.append(Paragraph("Provider x Production Type - Specialty Match", section_header_style))
-        m_head = ['Provider'] + [pt.get('name') for pt in pts]
-        m_body = []
+        pt_codes = {
+            _id_key(pt.get('id')): f"PT{idx + 1}"
+            for idx, pt in enumerate(pts)
+        }
+        m_rows = []
         provider_match_counts = {}
         pt_match_counts = {_id_key(pt.get('id')): 0 for pt in pts}
         providers_missing_spec = []
@@ -609,46 +652,92 @@ def generate_config_pdf(data: dict) -> BytesIO:
             provider_match_counts[provider_key] = 0
             if not prov_spec:
                 providers_missing_spec.append(prov_name)
-            row = [prov_name]
+            row_values = []
             for pt in pts:
                 pt_key = _id_key(pt.get('id'))
                 pt_name = pt.get('name') or f"Production Type #{pt.get('id')}"
                 pt_specs = pt.get('providerSpecialities') or []
-                if not prov_spec or not pt_specs: row.append("-")
+                if not prov_spec or not pt_specs:
+                    row_values.append("-")
                 elif prov_spec in pt_specs:
                     provider_match_counts[provider_key] += 1
                     pt_match_counts[pt_key] += 1
-                    row.append("Y")
+                    row_values.append("Y")
                 else:
                     mismatch_pairs.append(
                         f"{prov_name} -> {pt_name} (provider spec {prov_spec}; PT specs {', '.join(map(str, pt_specs))})"
                     )
-                    row.append("N")
-            m_body.append(row)
+                    row_values.append("N")
+            m_rows.append({'provider_name': prov_name, 'values': row_values})
         
-        m_widths = [40*mm] + [((260-40)/len(pts))*mm for _ in pts]
-        m_table = Table([m_head] + m_body, colWidths=m_widths)
-        m_table.setStyle(TableStyle([
+        code_rows = [[header_cell('Code'), header_cell('Production Type')]]
+        for pt in pts:
+            pt_key = _id_key(pt.get('id'))
+            code_rows.append([
+                cell(pt_codes[pt_key], tiny_cell_style),
+                cell(pt.get('name') or f"Production Type #{pt.get('id')}", tiny_cell_style)
+            ])
+
+        code_table = Table(code_rows, colWidths=[22*mm, table_width - 22*mm], repeatRows=1)
+        code_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), HEADER_BG),
             ('TEXTCOLOR', (0,0), (-1,0), TEAL),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
             ('BACKGROUND', (0,1), (-1,-1), CARD_BG),
             ('TEXTCOLOR', (0,1), (-1,-1), TEXT_COLOR),
             ('GRID', (0,0), (-1,-1), 0.5, BORDER_COLOR),
             ('FONTSIZE', (0,0), (-1,-1), 7.5),
-            ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ]))
-        # Color Y/N
-        for r_idx, row in enumerate(m_body):
-            for c_idx, val in enumerate(row[1:], 1):
-                if val == 'Y':
-                    m_table.setStyle(TableStyle([('TEXTCOLOR', (c_idx, r_idx+1), (c_idx, r_idx+1), TEAL)]))
-                elif val == 'N':
-                    m_table.setStyle(TableStyle([('TEXTCOLOR', (c_idx, r_idx+1), (c_idx, r_idx+1), ROSE)]))
+        elements.append(Paragraph("Production Type Codes", body_style))
+        elements.append(code_table)
+        elements.append(Spacer(1, 4*mm))
 
-        elements.append(m_table)
+        max_pt_cols = 18
+        provider_col_width = 55*mm
+        for start_idx in range(0, len(pts), max_pt_cols):
+            chunk = pts[start_idx:start_idx + max_pt_cols]
+            end_idx = start_idx + len(chunk)
+            chunk_codes = [pt_codes[_id_key(pt.get('id'))] for pt in chunk]
+            m_head = [header_cell('Provider')] + [header_cell(code) for code in chunk_codes]
+            m_body = [
+                [cell(row['provider_name'], tiny_cell_style)] + row['values'][start_idx:end_idx]
+                for row in m_rows
+            ]
+            pt_col_width = (table_width - provider_col_width) / max(len(chunk), 1)
+            m_table = Table(
+                [m_head] + m_body,
+                colWidths=[provider_col_width] + [pt_col_width for _ in chunk],
+                repeatRows=1
+            )
+            m_table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), HEADER_BG),
+                ('TEXTCOLOR', (0,0), (-1,0), TEAL),
+                ('BACKGROUND', (0,1), (-1,-1), CARD_BG),
+                ('TEXTCOLOR', (0,1), (-1,-1), TEXT_COLOR),
+                ('GRID', (0,0), (-1,-1), 0.5, BORDER_COLOR),
+                ('FONTSIZE', (0,0), (-1,-1), 7.2),
+                ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('LEFTPADDING', (0,0), (-1,-1), 4),
+                ('RIGHTPADDING', (0,0), (-1,-1), 4),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ]))
+            for r_idx, row in enumerate(m_body):
+                for c_idx, val in enumerate(row[1:], 1):
+                    if val == 'Y':
+                        m_table.setStyle(TableStyle([('TEXTCOLOR', (c_idx, r_idx+1), (c_idx, r_idx+1), TEAL)]))
+                    elif val == 'N':
+                        m_table.setStyle(TableStyle([('TEXTCOLOR', (c_idx, r_idx+1), (c_idx, r_idx+1), ROSE)]))
+
+            if len(pts) > max_pt_cols:
+                elements.append(Paragraph(f"Specialty Matrix Columns {chunk_codes[0]} to {chunk_codes[-1]}", body_style))
+            elements.append(m_table)
+            elements.append(Spacer(1, 4*mm))
 
         elements.append(Paragraph("Specialty Match Inference", section_header_style))
-        matrix_inference_rows = [['Inference', 'Severity', 'Affected', 'What it means']]
+        matrix_inference_rows = [[header_cell('Inference'), header_cell('Severity'), header_cell('Affected'), header_cell('What it means')]]
 
         providers_without_matches = [
             prov.get('name') or f"Provider #{prov.get('id')}"
@@ -664,10 +753,10 @@ def generate_config_pdf(data: dict) -> BytesIO:
         def add_matrix_finding(title, severity, affected, meaning):
             if affected:
                 matrix_inference_rows.append([
-                    title,
+                    cell(title),
                     severity,
-                    Paragraph(escape(_limited_name_list(affected)), small_style),
-                    Paragraph(escape(meaning), small_style),
+                    cell(_limited_name_list(affected), tiny_cell_style),
+                    cell(meaning, tiny_cell_style),
                 ])
 
         add_matrix_finding(
@@ -704,13 +793,13 @@ def generate_config_pdf(data: dict) -> BytesIO:
         if len(matrix_inference_rows) == 1:
             match_count = sum(provider_match_counts.values())
             matrix_inference_rows.append([
-                'Specialty matching',
+                cell('Specialty matching'),
                 'Clear',
-                Paragraph(f'{match_count} compatible provider-production type pair(s)', small_style),
-                Paragraph('Every selected provider has at least one compatible production type, and every selected production type has at least one compatible provider.', small_style)
+                cell(f'{match_count} compatible provider-production type pair(s)', tiny_cell_style),
+                cell('Every selected provider has at least one compatible production type, and every selected production type has at least one compatible provider.', tiny_cell_style)
             ])
 
-        matrix_inference_table = Table(matrix_inference_rows, colWidths=[50*mm, 25*mm, 95*mm, 90*mm])
+        matrix_inference_table = Table(matrix_inference_rows, colWidths=[50*mm, 25*mm, 90*mm, table_width - 165*mm], repeatRows=1)
         matrix_inference_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), HEADER_BG),
             ('TEXTCOLOR', (0,0), (-1,0), TEAL),
