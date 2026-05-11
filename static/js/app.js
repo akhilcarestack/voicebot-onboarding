@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
         operatory_providers: {},
         operatory_production_types: {},
         allProviderNameMap: {},  // complete provider name map (all locations) for operatory resolution
+        raw_provider_availability_templates: [],
         calendarPtDurations: {},  // production type calendar durations from timestamp details
     };
 
@@ -185,6 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     operatory_providers: appData.operatory_providers,
                     operatory_production_types: appData.operatory_production_types,
                     allProviderNameMap: appData.allProviderNameMap,
+                    raw_provider_availability_templates: appData.raw_provider_availability_templates,
                     calendarPtDurations: appData.calendarPtDurations,
                 },
                 maxStepReached,
@@ -482,9 +484,10 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             appData.operatories = data.operatories;
             appData.users = data.users;
-            appData.operatory_providers = data.operatory_providers;
+            appData.operatory_providers = data.operatory_providers || {};
             appData.operatory_production_types = data.operatory_production_types || {};
             appData.allProviderNameMap = data.all_provider_name_map || {};
+            appData.raw_provider_availability_templates = data.raw_provider_availability_templates || [];
             appData.slotDurationMinutes = data.slot_duration_minutes || 5;
             appData.calendarPtDurations = data.calendar_pt_durations || {};
 
@@ -1013,9 +1016,7 @@ document.addEventListener('DOMContentLoaded', () => {
         providers.forEach(provider => {
             productionTypes.forEach(productionType => {
                 const specialty = getSpecialtyStatus(provider, productionType);
-                const sharedOperatories = specialty.status === 'match'
-                    ? getSharedOperatories(provider.id, productionType.id)
-                    : [];
+                const sharedOperatories = getSharedOperatories(provider.id, productionType.id);
 
                 let status;
                 if (specialty.status === 'match' && sharedOperatories.length > 0) {
@@ -1088,7 +1089,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const productionTypeSpecs = (row.productionType.providerSpecialities || []).join(', ') || 'None';
                             let operatoryHtml = '';
 
-                            if (row.status === 'covered') {
+                            if (row.status === 'covered' || row.sharedOperatories.length > 0) {
                                 operatoryHtml = `<div class="coverage-op-list">${renderOperatoryCoverageChips(row.sharedOperatories)}</div>`;
                             } else if (row.status === 'missing') {
                                 operatoryHtml = '<span class="coverage-muted">No shared operatory</span>';
@@ -1119,39 +1120,112 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
-    function renderMissingCoverageGroups(missingRows) {
+    function getNotMatchedReason(row) {
+        const providerHasSpec = !!row.provider.specialityId;
+        const productionTypeSpecs = row.productionType.providerSpecialities || [];
+
+        if (!providerHasSpec && productionTypeSpecs.length === 0) {
+            return 'Provider and PT specialty missing';
+        }
+        if (!providerHasSpec) {
+            return 'Provider specialty missing';
+        }
+        if (productionTypeSpecs.length === 0) {
+            return 'PT specialty missing';
+        }
+        return `PT spec: ${productionTypeSpecs.join(', ')}`;
+    }
+
+    function renderAvailableCoverageRows(rows) {
+        return `
+            <div class="coverage-available-list">
+                ${rows.map(row => `
+                    <div class="coverage-available-row">
+                        <span class="coverage-available-tag">${escapeHtml(row.productionType.name)}</span>
+                        <div class="coverage-op-list">${renderOperatoryCoverageChips(row.sharedOperatories)}</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderNeedsAttentionCoverageGroups(missingRows, coveredRows, notMatchedRows) {
         const grouped = new Map();
 
-        missingRows.forEach(row => {
+        const ensureProviderGroup = row => {
             const providerKey = String(row.provider.id);
             if (!grouped.has(providerKey)) {
                 grouped.set(providerKey, {
                     provider: row.provider,
-                    rows: []
+                    missingRows: [],
+                    coveredRows: [],
+                    notMatchedRows: []
                 });
             }
-            grouped.get(providerKey).rows.push(row);
-        });
+            return grouped.get(providerKey);
+        };
+
+        missingRows.forEach(row => ensureProviderGroup(row).missingRows.push(row));
+        coveredRows.forEach(row => ensureProviderGroup(row).coveredRows.push(row));
+        notMatchedRows.forEach(row => ensureProviderGroup(row).notMatchedRows.push(row));
+
+        if (grouped.size === 0) return '';
 
         return `
             <div class="coverage-gap-list">
-                ${Array.from(grouped.values()).map(group => `
-                    <div class="coverage-gap-item">
-                        <div class="coverage-gap-head">
-                            <div>
-                                <div class="coverage-gap-provider">${escapeHtml(group.provider.name)}</div>
-                                <div class="coverage-secondary">${escapeHtml(group.provider.providerType || 'Unknown')} - Spec #${escapeHtml(group.provider.specialityId || 'None')}</div>
+                ${Array.from(grouped.values()).map(group => {
+                    const totalRows = group.missingRows.length + group.coveredRows.length + group.notMatchedRows.length;
+                    return `
+                        <div class="coverage-gap-item">
+                            <div class="coverage-gap-head">
+                                <div>
+                                    <div class="coverage-gap-provider">${escapeHtml(group.provider.name)}</div>
+                                    <div class="coverage-secondary">${escapeHtml(group.provider.providerType || 'Unknown')} - Spec #${escapeHtml(group.provider.specialityId || 'None')}</div>
+                                </div>
+                                <span class="coverage-count-badge">${totalRows} combo${totalRows !== 1 ? 's' : ''}</span>
                             </div>
-                            <span class="coverage-count-badge">${group.rows.length} combo${group.rows.length !== 1 ? 's' : ''}</span>
+                            ${group.missingRows.length > 0 ? `
+                                <div class="coverage-card-section">
+                                    <div class="coverage-card-section-title">Needs setup</div>
+                                    <div class="coverage-gap-copy">Add this provider and these production types to the same operatory.</div>
+                                    <div class="coverage-production-tags">
+                                        ${group.missingRows.map(row => `
+                                            <span class="coverage-production-tag">${escapeHtml(row.productionType.name)}</span>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            ${group.coveredRows.length > 0 ? `
+                                <div class="coverage-card-section">
+                                    <div class="coverage-card-section-title covered">Available in shared operatories</div>
+                                    <div class="coverage-gap-copy">These selected production types already share at least one operatory with this provider.</div>
+                                    ${renderAvailableCoverageRows(group.coveredRows)}
+                                </div>
+                            ` : ''}
+                            ${group.notMatchedRows.length > 0 ? `
+                                <div class="coverage-card-section">
+                                    <div class="coverage-card-section-title mismatch">Not specialty-matched</div>
+                                    <div class="coverage-gap-copy">These production types share an operatory with this provider, but their specialties are not compatible.</div>
+                                    <div class="coverage-mismatch-list">
+                                        ${group.notMatchedRows.map(row => {
+                                            const specs = (row.productionType.providerSpecialities || []).join(', ') || 'None';
+                                            const reason = getNotMatchedReason(row);
+                                            return `
+                                                <div class="coverage-mismatch-row">
+                                                    <span class="coverage-mismatch-tag" title="Provider spec: ${escapeHtml(row.provider.specialityId || 'None')}; Production type specs: ${escapeHtml(specs)}">
+                                                        ${escapeHtml(row.productionType.name)}
+                                                        <small>${escapeHtml(reason)}</small>
+                                                    </span>
+                                                    <div class="coverage-op-list">${renderOperatoryCoverageChips(row.sharedOperatories)}</div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
                         </div>
-                        <div class="coverage-gap-copy">Add this provider and these production types to the same operatory.</div>
-                        <div class="coverage-production-tags">
-                            ${group.rows.map(row => `
-                                <span class="coverage-production-tag">${escapeHtml(row.productionType.name)}</span>
-                            `).join('')}
-                        </div>
-                    </div>
-                `).join('')}
+                    `;
+                }).join('')}
             </div>
         `;
     }
@@ -1177,8 +1251,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const compatibleRows = rows.filter(row => row.specialty.status === 'match');
         const coveredRows = compatibleRows.filter(row => row.status === 'covered');
         const missingRows = compatibleRows.filter(row => row.status === 'missing');
-        const skippedRows = rows.filter(row => row.specialty.status !== 'match');
+        const notMatchedRows = rows.filter(row =>
+            row.specialty.status !== 'match' && row.sharedOperatories.length > 0
+        );
         const affectedProviderCount = new Set(missingRows.map(row => row.provider.id)).size;
+        const needsAttentionCount = missingRows.length + notMatchedRows.length;
         const mode = getSchedulingCoverageMode();
 
         let visibleRows;
@@ -1190,17 +1267,23 @@ document.addEventListener('DOMContentLoaded', () => {
             visibleRows = missingRows;
         }
 
-        els.schedulingCoverageBadge.textContent = missingRows.length > 0
-            ? `${missingRows.length} need setup`
+        els.schedulingCoverageBadge.textContent = needsAttentionCount > 0
+            ? `${needsAttentionCount} need attention`
             : `${coveredRows.length} covered`;
 
-        const stateClass = missingRows.length > 0 ? 'warn' : 'ok';
+        const stateClass = needsAttentionCount > 0 ? 'warn' : 'ok';
         let stateTitle;
         let stateCopy;
 
-        if (missingRows.length > 0) {
+        if (missingRows.length > 0 && notMatchedRows.length > 0) {
+            stateTitle = `${needsAttentionCount} combo${needsAttentionCount !== 1 ? 's' : ''} need attention`;
+            stateCopy = `${missingRows.length} specialty-compatible combo${missingRows.length !== 1 ? 's need' : ' needs'} setup, and ${notMatchedRows.length} same-operatory combo${notMatchedRows.length !== 1 ? 's are' : ' is'} not specialty-matched.`;
+        } else if (missingRows.length > 0) {
             stateTitle = `${missingRows.length} combo${missingRows.length !== 1 ? 's' : ''} need setup`;
             stateCopy = `${affectedProviderCount} provider${affectedProviderCount !== 1 ? 's' : ''} have specialty-compatible production types without a shared operatory.`;
+        } else if (notMatchedRows.length > 0) {
+            stateTitle = `${notMatchedRows.length} same-operatory combo${notMatchedRows.length !== 1 ? 's are' : ' is'} not specialty-matched`;
+            stateCopy = 'These providers and production types share an operatory, but their specialties are not compatible.';
         } else if (compatibleRows.length > 0) {
             stateTitle = 'All schedulable combos are covered';
             stateCopy = 'Every specialty-compatible provider and production type pair has at least one shared operatory.';
@@ -1211,13 +1294,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let detailHtml = '';
         if (mode === 'needs') {
-            if (missingRows.length > 0) {
-                detailHtml = renderMissingCoverageGroups(missingRows);
-            } else {
+            if (missingRows.length > 0 || coveredRows.length > 0 || notMatchedRows.length > 0) {
+                detailHtml = renderNeedsAttentionCoverageGroups(missingRows, coveredRows, notMatchedRows);
+            } else if (compatibleRows.length > 0) {
                 detailHtml = `
                     <div class="coverage-empty-ok">
                         <div class="coverage-empty-title">Nothing needs setup</div>
                         <div class="coverage-empty-copy">All specialty-compatible pairs already have a shared operatory.</div>
+                    </div>
+                `;
+            } else {
+                detailHtml = `
+                    <div class="empty-state compact">
+                        <div class="empty-text">No shared operatory combos found</div>
                     </div>
                 `;
             }
@@ -1236,7 +1325,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         els.schedulingCoverageContainer.innerHTML = `
             <div class="coverage-state ${stateClass}">
-                <div class="coverage-state-icon">${missingRows.length > 0 ? '⚠️' : '✅'}</div>
+                <div class="coverage-state-icon">${needsAttentionCount > 0 ? '⚠️' : '✅'}</div>
                 <div>
                     <div class="coverage-state-title">${escapeHtml(stateTitle)}</div>
                     <div class="coverage-state-copy">${escapeHtml(stateCopy)}</div>
@@ -1264,8 +1353,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="stat-card amber">
                     <div>
-                        <div class="stat-value">${skippedRows.length}</div>
-                        <div class="stat-label">Skipped</div>
+                        <div class="stat-value">${notMatchedRows.length}</div>
+                        <div class="stat-label">Not Matched</div>
                     </div>
                 </div>
             </div>

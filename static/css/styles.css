@@ -1076,6 +1076,11 @@ body {
     background: rgba(245, 158, 11, 0.045);
 }
 
+.coverage-gap-item.mismatch {
+    border-color: rgba(244, 63, 94, 0.22);
+    background: rgba(244, 63, 94, 0.045);
+}
+
 .coverage-gap-head {
     display: flex;
     align-items: flex-start;
@@ -1103,11 +1108,39 @@ body {
     line-height: 1.4;
 }
 
+.coverage-count-badge.mismatch {
+    background: var(--accent-rose-dim);
+    color: var(--accent-rose);
+    border-color: rgba(244, 63, 94, 0.28);
+}
+
 .coverage-gap-copy {
     color: var(--text-secondary);
     font-size: 12px;
     line-height: 1.45;
     margin-bottom: 10px;
+}
+
+.coverage-card-section {
+    padding-top: 10px;
+    margin-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.coverage-card-section-title {
+    color: var(--accent-amber);
+    font-size: 12px;
+    font-weight: 750;
+    line-height: 1.35;
+    margin-bottom: 4px;
+}
+
+.coverage-card-section-title.mismatch {
+    color: var(--accent-rose);
+}
+
+.coverage-card-section-title.covered {
+    color: var(--accent-teal);
 }
 
 .coverage-production-tags,
@@ -1129,6 +1162,63 @@ body {
     font-size: 11px;
     font-weight: 650;
     line-height: 1.35;
+}
+
+.coverage-available-list {
+    display: grid;
+    gap: 8px;
+}
+
+.coverage-available-row {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.coverage-available-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(0, 212, 170, 0.26);
+    background: var(--accent-teal-dim);
+    color: var(--accent-teal);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.coverage-mismatch-list {
+    display: grid;
+    gap: 8px;
+}
+
+.coverage-mismatch-row {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.coverage-mismatch-tag {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(244, 63, 94, 0.28);
+    background: var(--accent-rose-dim);
+    color: var(--accent-rose);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.coverage-mismatch-tag small {
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 500;
 }
 
 .coverage-empty-ok {

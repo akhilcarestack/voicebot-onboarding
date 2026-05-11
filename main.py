@@ -49,6 +49,134 @@ TOKEN_CACHE = {
 # Slot duration constant: 1 slot = 5 minutes
 SLOT_DURATION_MINUTES = 5
 
+OPERATORY_ID_KEYS = ("operatoryId", "OperatoryId", "OperatoryID", "operatoryID", "opId", "OpId")
+PROVIDER_ID_KEYS = ("providerId", "ProviderId", "ProviderID", "providerID")
+PROVIDER_COLLECTION_KEYS = ("providerIds", "ProviderIds", "ProviderIDs", "providerIDs", "providers", "Providers")
+RESPONSE_COLLECTION_KEYS = ("Result", "Items", "items", "data", "Data")
+
+
+def _coerce_id(value):
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
+def _id_key(value):
+    coerced = _coerce_id(value)
+    return None if coerced is None else str(coerced)
+
+
+def _first_present(data, keys):
+    if not isinstance(data, dict):
+        return None
+    for key in keys:
+        if data.get(key) is not None:
+            return data.get(key)
+    return None
+
+
+def _extract_provider_ids(value, allow_generic_id=False):
+    if value is None:
+        return []
+    if isinstance(value, (str, int)) and not isinstance(value, bool):
+        return [value]
+    if isinstance(value, list):
+        provider_ids = []
+        for item in value:
+            provider_ids.extend(_extract_provider_ids(item, allow_generic_id=True))
+        return provider_ids
+    if isinstance(value, dict):
+        provider_ids = []
+        keys = PROVIDER_ID_KEYS + (("id", "Id") if allow_generic_id else ())
+        direct_provider_id = _first_present(value, keys)
+        if direct_provider_id is not None:
+            provider_ids.append(direct_provider_id)
+        for key in PROVIDER_COLLECTION_KEYS:
+            provider_ids.extend(_extract_provider_ids(value.get(key), allow_generic_id=True))
+        return provider_ids
+    return []
+
+
+def _add_operatory_provider(mapping, operatory_id, provider_id):
+    op_key = _id_key(operatory_id)
+    provider_value = _coerce_id(provider_id)
+    if op_key is None or provider_value is None:
+        return
+    mapping.setdefault(op_key, set()).add(provider_value)
+
+
+def _sort_id_values(values):
+    return sorted(values, key=lambda value: (0, value) if isinstance(value, int) else (1, str(value)))
+
+
+def build_operatory_provider_map(raw_operatory_provider_data, provider_availability_templates, selected_location_ids):
+    """Merge direct operatory-provider data with provider availability templates by selected location."""
+    operatory_providers = {}
+    operatory_provider_records = None
+
+    if isinstance(raw_operatory_provider_data, dict):
+        for key in RESPONSE_COLLECTION_KEYS:
+            if isinstance(raw_operatory_provider_data.get(key), list):
+                operatory_provider_records = raw_operatory_provider_data.get(key)
+                break
+        if operatory_provider_records is None:
+            for operatory_id, provider_value in raw_operatory_provider_data.items():
+                for provider_id in _extract_provider_ids(provider_value, allow_generic_id=True):
+                    _add_operatory_provider(operatory_providers, operatory_id, provider_id)
+    elif isinstance(raw_operatory_provider_data, list):
+        operatory_provider_records = raw_operatory_provider_data
+
+    if operatory_provider_records is not None:
+        for record in operatory_provider_records:
+            if not isinstance(record, dict):
+                continue
+            operatory_id = _first_present(record, OPERATORY_ID_KEYS)
+            if operatory_id is None:
+                continue
+            provider_ids = []
+            direct_provider_id = _first_present(record, PROVIDER_ID_KEYS)
+            if direct_provider_id is not None:
+                provider_ids.append(direct_provider_id)
+            for key in PROVIDER_COLLECTION_KEYS:
+                provider_ids.extend(_extract_provider_ids(record.get(key), allow_generic_id=True))
+            for provider_id in provider_ids:
+                _add_operatory_provider(operatory_providers, operatory_id, provider_id)
+
+    selected_location_keys = {_id_key(location_id) for location_id in selected_location_ids}
+    selected_location_keys.discard(None)
+
+    for template in provider_availability_templates or []:
+        if not isinstance(template, dict) or template.get("isProviderUnavailable"):
+            continue
+        provider_ids = []
+        direct_provider_id = _first_present(template, PROVIDER_ID_KEYS)
+        if direct_provider_id is not None:
+            provider_ids.append(direct_provider_id)
+        for key in PROVIDER_COLLECTION_KEYS:
+            provider_ids.extend(_extract_provider_ids(template.get(key), allow_generic_id=True))
+
+        for availability in template.get("providerAvailability") or []:
+            if not isinstance(availability, dict):
+                continue
+            location_key = _id_key(availability.get("locationId"))
+            if selected_location_keys and location_key not in selected_location_keys:
+                continue
+            operatory_id = _first_present(availability, OPERATORY_ID_KEYS)
+            for provider_id in provider_ids:
+                _add_operatory_provider(operatory_providers, operatory_id, provider_id)
+
+    return {
+        operatory_id: _sort_id_values(provider_ids)
+        for operatory_id, provider_ids in operatory_providers.items()
+    }
+
 app.mount("/static", StaticFiles(directory=get_resource_path("app/static")), name="static")
 templates = Jinja2Templates(directory=get_resource_path("app/templates"))
 
@@ -365,6 +493,15 @@ def fetch_all_data(creds: FetchAllDataRequest):
             raw_templates = future_templates.result()
             raw_prov_avail_templates = future_prov_avail_templates.result()
 
+        operatory_providers = build_operatory_provider_map(
+            raw_op_prov,
+            raw_prov_avail_templates,
+            creds.selected_location_ids,
+        )
+        logger.info(
+            f"Built operatory-provider map for {len(operatory_providers)} operatories "
+            "from direct assignments and provider availability templates"
+        )
 
         # --- Build Operatory -> Production Types map ---
         operatory_production_types = {}
@@ -651,7 +788,7 @@ def fetch_all_data(creds: FetchAllDataRequest):
             "production_types": production_types,
             "operatories": operatories,
             "users": users,
-            "operatory_providers": raw_op_prov,
+            "operatory_providers": operatory_providers,
             "operatory_production_types": operatory_production_types,
             "all_provider_name_map": all_provider_name_map,
             "slot_duration_minutes": SLOT_DURATION_MINUTES,
